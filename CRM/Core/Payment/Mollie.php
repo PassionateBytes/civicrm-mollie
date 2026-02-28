@@ -27,6 +27,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     parent::__construct($mode, $paymentProcessor);
   }
 
+  // ---------------------------------------------------------------------------
+  // Configuration & capabilities
+  // ---------------------------------------------------------------------------
+
   /**
    * Validate that the payment processor is configured correctly.
    *
@@ -49,6 +53,65 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
 
     return NULL;
   }
+
+  /**
+   * This processor supports recurring contributions.
+   *
+   * @return bool
+   */
+  public function supportsRecurring(): bool {
+    return TRUE;
+  }
+
+  /**
+   * This processor supports cancelling recurring contributions.
+   *
+   * @return bool
+   */
+  protected function supportsCancelRecurring(): bool {
+    return TRUE;
+  }
+
+  /**
+   * This processor supports editing recurring contributions.
+   *
+   * @return bool
+   */
+  public function supportsEditRecurringContribution(): bool {
+    return TRUE;
+  }
+
+  /**
+   * Fields that can be edited on a recurring contribution.
+   *
+   * @return array
+   */
+  public function getEditableRecurringScheduleFields(): array {
+    return ['amount'];
+  }
+
+  /**
+   * No on-site payment form fields — Mollie handles payment collection.
+   *
+   * @return array
+   */
+  public function getPaymentFormFields(): array {
+    return [];
+  }
+
+  /**
+   * No billing address fields needed — address is collected on Mollie side.
+   *
+   * @param int $bltID
+   * @return array
+   */
+  public function getBillingAddressFields($bltID = NULL): array {
+    return [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Payment initiation
+  // ---------------------------------------------------------------------------
 
   /**
    * Initiate a one-off or first recurring payment via Mollie.
@@ -135,6 +198,39 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   }
 
   /**
+   * Add recurring-specific parameters to a Mollie payment request.
+   *
+   * Finds or creates a Mollie customer for the contact and sets
+   * sequenceType to "first" so Mollie creates a mandate.
+   *
+   * @param array $paymentParams
+   *   Base Mollie payment parameters.
+   * @param array $params
+   *   CiviCRM payment parameters.
+   *
+   * @return array
+   *   Modified payment parameters with recurring fields.
+   *
+   * @throws PaymentProcessorException
+   */
+  protected function addRecurringPaymentParams(array $paymentParams, array $params): array {
+    $propertyBag = PropertyBag::cast($params);
+    $contactId = $propertyBag->getContactID();
+
+    $mollieCustomerId = $this->findOrCreateMollieCustomer($contactId);
+
+    $paymentParams['sequenceType'] = 'first';
+    $paymentParams['customerId'] = $mollieCustomerId;
+    $paymentParams['metadata']['contribution_recur_id'] = $params['contributionRecurID'] ?? NULL;
+
+    return $paymentParams;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Webhook handling
+  // ---------------------------------------------------------------------------
+
+  /**
    * Handle incoming Mollie webhook notification.
    *
    * Called by CiviCRM's core IPN route dispatcher. Mollie POSTs
@@ -216,15 +312,44 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   /**
    * Process a webhook for a recurring installment payment (Mollie-initiated).
    *
+   * Mollie creates these payments automatically per the subscription schedule.
+   * Each triggers a webhook that we use to create a CiviCRM contribution.
+   *
    * @param \Mollie\Api\Resources\Payment $molliePayment
    */
   protected function processRecurringPaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment): void {
-    // Recurring installments are handled in Stage 5.
-    $this->logWarning('Recurring payment webhook received but not yet implemented', [
-      'mollie_payment_id' => $molliePayment->id,
-      'subscription_id' => $molliePayment->subscriptionId,
-    ]);
+    $subscriptionId = $molliePayment->subscriptionId;
+
+    // Idempotency: check if we already recorded this payment.
+    $existing = $this->findContributionByTrxnId($molliePayment->id);
+    if ($existing !== NULL) {
+      $this->logDebug('Recurring payment already recorded, skipping', [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_id' => $existing['id'],
+      ]);
+      return;
+    }
+
+    $contributionRecur = $this->findContributionRecurByProcessorId($subscriptionId);
+    if ($contributionRecur === NULL) {
+      $this->logWarning('Webhook for unknown subscription', [
+        'mollie_payment_id' => $molliePayment->id,
+        'subscription_id' => $subscriptionId,
+      ]);
+      return;
+    }
+
+    if ($molliePayment->isPaid()) {
+      $this->createRecurringInstallment($contributionRecur, $molliePayment);
+    }
+    elseif ($molliePayment->isFailed()) {
+      $this->recordFailedRecurringInstallment($contributionRecur, $molliePayment);
+    }
   }
+
+  // ---------------------------------------------------------------------------
+  // Contribution status updates
+  // ---------------------------------------------------------------------------
 
   /**
    * Complete a contribution after a successful Mollie payment.
@@ -293,40 +418,322 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Recurring: first payment → subscription setup
+  // ---------------------------------------------------------------------------
+
   /**
    * Handle the completion of the first payment in a recurring series.
    *
-   * Verifies the mandate and creates the Mollie subscription.
-   * Implemented in Stage 5.
+   * Verifies the mandate exists, stores it as a PaymentToken, creates
+   * the Mollie subscription, and updates the ContributionRecur.
    *
    * @param array $contribution
    * @param \Mollie\Api\Resources\Payment $molliePayment
    */
   protected function handleFirstRecurringPaymentCompleted(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
-    // Stub — full implementation in Stage 5.
-    $this->logInfo('First recurring payment completed, subscription setup pending', [
-      'contribution_id' => $contribution['id'],
-      'mollie_payment_id' => $molliePayment->id,
-    ]);
+    $recurId = $contribution['contribution_recur_id'];
+    $customerId = $molliePayment->customerId;
+
+    try {
+      $mandateId = $this->verifyMandate($customerId);
+      if ($mandateId === NULL) {
+        $this->logError('No valid mandate found after first recurring payment', [
+          'contribution_id' => $contribution['id'],
+          'mollie_customer_id' => $customerId,
+        ]);
+        return;
+      }
+
+      $paymentTokenId = $this->createPaymentToken($contribution['contact_id'], $mandateId);
+
+      \Civi\Api4\ContributionRecur::update(FALSE)
+        ->addWhere('id', '=', $recurId)
+        ->addValue('payment_token_id', $paymentTokenId)
+        ->execute();
+
+      $recur = \Civi\Api4\ContributionRecur::get(FALSE)
+        ->addSelect('*')
+        ->addWhere('id', '=', $recurId)
+        ->setLimit(1)
+        ->execute()
+        ->first();
+
+      $subscriptionId = $this->createMollieSubscription($customerId, $mandateId, $recur);
+
+      \Civi\Api4\ContributionRecur::update(FALSE)
+        ->addWhere('id', '=', $recurId)
+        ->addValue('processor_id', $subscriptionId)
+        ->addValue('contribution_status_id:name', 'In Progress')
+        ->execute();
+
+      $this->logInfo('Mollie subscription created', [
+        'subscription_id' => $subscriptionId,
+        'contribution_recur_id' => $recurId,
+        'mollie_customer_id' => $customerId,
+        'mandate_id' => $mandateId,
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->logError('Failed to set up recurring subscription after first payment', [
+        'contribution_id' => $contribution['id'],
+        'contribution_recur_id' => $recurId,
+        'error' => $e->getMessage(),
+      ]);
+    }
   }
 
   /**
-   * Add recurring-specific parameters to a Mollie payment request.
+   * Create a Mollie subscription for recurring payments.
    *
-   * Implemented in Stage 5.
+   * @param string $customerId
+   * @param string $mandateId
+   * @param array $recur
+   *   ContributionRecur record.
    *
-   * @param array $paymentParams
-   *   Base Mollie payment parameters.
-   * @param array $params
-   *   CiviCRM payment parameters.
+   * @return string
+   *   The Mollie subscription ID.
    *
-   * @return array
-   *   Modified payment parameters with recurring fields.
+   * @throws \Mollie\Api\Exceptions\ApiException
    */
-  protected function addRecurringPaymentParams(array $paymentParams, array $params): array {
-    // Stub — full implementation in Stage 5.
-    return $paymentParams;
+  protected function createMollieSubscription(string $customerId, string $mandateId, array $recur): string {
+    $interval = $this->mapCiviCrmFrequencyToMollie(
+      $recur['frequency_unit'],
+      $recur['frequency_interval']
+    );
+
+    $subscriptionParams = [
+      'amount' => [
+        'currency' => $recur['currency'],
+        'value' => number_format((float) $recur['amount'], 2, '.', ''),
+      ],
+      'interval' => $interval,
+      'description' => $this->buildPaymentDescription($recur['id']),
+      'webhookUrl' => $this->getNotifyUrl(),
+      'mandateId' => $mandateId,
+      'metadata' => [
+        'contribution_recur_id' => $recur['id'],
+        'contact_id' => $recur['contact_id'],
+      ],
+    ];
+
+    if (!empty($recur['next_sched_contribution_date'])) {
+      $subscriptionParams['startDate'] = date('Y-m-d', strtotime($recur['next_sched_contribution_date']));
+    }
+
+    // Subtract 1 from installments since the first payment was already made.
+    if (!empty($recur['installments']) && $recur['installments'] > 1) {
+      $subscriptionParams['times'] = $recur['installments'] - 1;
+    }
+
+    $subscription = $this->getMollieApiClient()->subscriptions->createForId($customerId, $subscriptionParams);
+
+    return $subscription->id;
   }
+
+  // ---------------------------------------------------------------------------
+  // Recurring: subsequent installment handling
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Create a CiviCRM contribution for a successful recurring installment.
+   *
+   * @param array $contributionRecur
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   */
+  protected function createRecurringInstallment(array $contributionRecur, \Mollie\Api\Resources\Payment $molliePayment): void {
+    $params = [
+      'contribution_recur_id' => $contributionRecur['id'],
+      'trxn_id' => $molliePayment->id,
+      'contribution_status_id' => 'Completed',
+      'receive_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
+      'total_amount' => (float) $molliePayment->amount->value,
+    ];
+
+    if ($molliePayment->settlementAmount !== NULL) {
+      $feeAmount = (float) $molliePayment->amount->value - (float) $molliePayment->settlementAmount->value;
+      if ($feeAmount > 0) {
+        $params['fee_amount'] = number_format($feeAmount, 2, '.', '');
+      }
+    }
+
+    try {
+      civicrm_api3('Contribution', 'repeattransaction', $params);
+
+      $nextDate = $this->calculateNextScheduledDate($contributionRecur);
+      if ($nextDate !== NULL) {
+        \Civi\Api4\ContributionRecur::update(FALSE)
+          ->addWhere('id', '=', $contributionRecur['id'])
+          ->addValue('next_sched_contribution_date', $nextDate)
+          ->execute();
+      }
+
+      $this->logInfo('Recurring installment recorded', [
+        'contribution_recur_id' => $contributionRecur['id'],
+        'mollie_payment_id' => $molliePayment->id,
+        'amount' => $molliePayment->amount->value,
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->logError('Failed to record recurring installment', [
+        'contribution_recur_id' => $contributionRecur['id'],
+        'mollie_payment_id' => $molliePayment->id,
+        'error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Record a failed recurring installment for audit trail.
+   *
+   * @param array $contributionRecur
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   */
+  protected function recordFailedRecurringInstallment(array $contributionRecur, \Mollie\Api\Resources\Payment $molliePayment): void {
+    try {
+      civicrm_api3('Contribution', 'repeattransaction', [
+        'contribution_recur_id' => $contributionRecur['id'],
+        'trxn_id' => $molliePayment->id,
+        'contribution_status_id' => 'Failed',
+        'receive_date' => date('Y-m-d H:i:s'),
+        'total_amount' => (float) $molliePayment->amount->value,
+      ]);
+
+      \Civi\Api4\ContributionRecur::update(FALSE)
+        ->addWhere('id', '=', $contributionRecur['id'])
+        ->addValue('failure_count', ($contributionRecur['failure_count'] ?? 0) + 1)
+        ->execute();
+
+      $this->logWarning('Recurring installment failed', [
+        'contribution_recur_id' => $contributionRecur['id'],
+        'mollie_payment_id' => $molliePayment->id,
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->logError('Failed to record failed recurring installment', [
+        'contribution_recur_id' => $contributionRecur['id'],
+        'error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Mollie customer & mandate management
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Find or create a Mollie customer for a CiviCRM contact.
+   *
+   * @param int $contactId
+   *
+   * @return string
+   *   The Mollie customer ID.
+   *
+   * @throws PaymentProcessorException
+   */
+  protected function findOrCreateMollieCustomer(int $contactId): string {
+    $processorId = $this->_paymentProcessor['id'];
+
+    $existing = \Civi\Api4\MollieCustomer::get(FALSE)
+      ->addSelect('mollie_customer_id')
+      ->addWhere('contact_id', '=', $contactId)
+      ->addWhere('payment_processor_id', '=', $processorId)
+      ->setLimit(1)
+      ->execute();
+
+    if ($existing->count() > 0) {
+      return $existing->first()['mollie_customer_id'];
+    }
+
+    $contact = \Civi\Api4\Contact::get(FALSE)
+      ->addSelect('display_name', 'email_primary.email')
+      ->addWhere('id', '=', $contactId)
+      ->setLimit(1)
+      ->execute()
+      ->first();
+
+    try {
+      $mollieCustomer = $this->getMollieApiClient()->customers->create([
+        'name' => $contact['display_name'] ?? '',
+        'email' => $contact['email_primary.email'] ?? '',
+        'metadata' => ['contact_id' => $contactId],
+      ]);
+    }
+    catch (\Mollie\Api\Exceptions\ApiException $e) {
+      $this->logError('Failed to create Mollie customer', [
+        'contact_id' => $contactId,
+        'error' => $e->getMessage(),
+      ]);
+      throw new PaymentProcessorException(
+        E::ts('Could not set up recurring payment. Please try again.')
+      );
+    }
+
+    \Civi\Api4\MollieCustomer::create(FALSE)
+      ->addValue('contact_id', $contactId)
+      ->addValue('payment_processor_id', $processorId)
+      ->addValue('mollie_customer_id', $mollieCustomer->id)
+      ->execute();
+
+    $this->logInfo('Mollie customer created', [
+      'mollie_customer_id' => $mollieCustomer->id,
+      'contact_id' => $contactId,
+    ]);
+
+    return $mollieCustomer->id;
+  }
+
+  /**
+   * Verify that a valid mandate exists for a Mollie customer.
+   *
+   * @param string $customerId
+   *
+   * @return string|null
+   *   The mandate ID if valid, null otherwise.
+   */
+  protected function verifyMandate(string $customerId): ?string {
+    try {
+      $mandates = $this->getMollieApiClient()->mandates->listForId($customerId);
+      foreach ($mandates as $mandate) {
+        if ($mandate->isValid()) {
+          return $mandate->id;
+        }
+      }
+    }
+    catch (\Mollie\Api\Exceptions\ApiException $e) {
+      $this->logError('Failed to verify mandate', [
+        'mollie_customer_id' => $customerId,
+        'error' => $e->getMessage(),
+      ]);
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Create a PaymentToken record for a Mollie mandate.
+   *
+   * @param int $contactId
+   * @param string $mandateId
+   *
+   * @return int
+   *   The PaymentToken ID.
+   */
+  protected function createPaymentToken(int $contactId, string $mandateId): int {
+    $result = \Civi\Api4\PaymentToken::create(FALSE)
+      ->addValue('contact_id', $contactId)
+      ->addValue('payment_processor_id', $this->_paymentProcessor['id'])
+      ->addValue('token', $mandateId)
+      ->addValue('created_date', date('Y-m-d H:i:s'))
+      ->execute()
+      ->first();
+
+    return $result['id'];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Lookup helpers
+  // ---------------------------------------------------------------------------
 
   /**
    * Find a contribution by its Mollie payment ID (trxn_id).
@@ -348,6 +755,27 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   }
 
   /**
+   * Find a ContributionRecur by its Mollie subscription ID (processor_id).
+   *
+   * @param string $subscriptionId
+   *
+   * @return array|null
+   */
+  protected function findContributionRecurByProcessorId(string $subscriptionId): ?array {
+    $results = \Civi\Api4\ContributionRecur::get(FALSE)
+      ->addSelect('*')
+      ->addWhere('processor_id', '=', $subscriptionId)
+      ->setLimit(1)
+      ->execute();
+
+    return $results->count() > 0 ? $results->first() : NULL;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Formatting & mapping helpers
+  // ---------------------------------------------------------------------------
+
+  /**
    * Build the payment description from the configured template.
    *
    * @param int $contributionId
@@ -357,6 +785,54 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   protected function buildPaymentDescription(int $contributionId): string {
     $template = \Civi::settings()->get('mollie_payment_description') ?? 'Donation #{contribution.id}';
     return str_replace('{contribution.id}', (string) $contributionId, $template);
+  }
+
+  /**
+   * Map CiviCRM frequency settings to a Mollie interval string.
+   *
+   * @param string $frequencyUnit
+   *   CiviCRM frequency unit: 'day', 'week', 'month', 'year'.
+   * @param int $frequencyInterval
+   *   Number of units between payments.
+   *
+   * @return string
+   *   Mollie interval string (e.g. "1 months", "2 weeks").
+   *
+   * @throws PaymentProcessorException
+   */
+  protected function mapCiviCrmFrequencyToMollie(string $frequencyUnit, int $frequencyInterval): string {
+    return match ($frequencyUnit) {
+      'day' => "$frequencyInterval days",
+      'week' => "$frequencyInterval weeks",
+      'month' => "$frequencyInterval months",
+      'year' => ($frequencyInterval * 12) . ' months',
+      default => throw new PaymentProcessorException(
+        E::ts('Unsupported recurring frequency: %1', [1 => $frequencyUnit])
+      ),
+    };
+  }
+
+  /**
+   * Calculate the next scheduled contribution date based on frequency.
+   *
+   * @param array $recur
+   *
+   * @return string|null
+   *   Next date in Y-m-d H:i:s format.
+   */
+  protected function calculateNextScheduledDate(array $recur): ?string {
+    $currentDate = $recur['next_sched_contribution_date'] ?? NULL;
+    if ($currentDate === NULL) {
+      return NULL;
+    }
+
+    $interval = $recur['frequency_interval'] ?? 1;
+    $unit = $recur['frequency_unit'] ?? 'month';
+
+    $next = new \DateTime($currentDate);
+    $next->modify("+{$interval} {$unit}");
+
+    return $next->format('Y-m-d H:i:s');
   }
 
   /**
@@ -394,13 +870,16 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     return NULL;
   }
 
+  // ---------------------------------------------------------------------------
+  // Mollie API client & credentials
+  // ---------------------------------------------------------------------------
+
   /**
    * Initialize and return the Mollie API client.
    *
    * @return \Mollie\Api\MollieApiClient
    *
    * @throws PaymentProcessorException
-   *   If the API key is missing or the SDK cannot be initialized.
    */
   protected function getMollieApiClient(): \Mollie\Api\MollieApiClient {
     if ($this->mollieClient !== NULL) {
@@ -432,7 +911,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * Get the active Mollie API key based on test/live mode.
    *
    * @return string
-   *   The API key.
    */
   protected function getApiKey(): string {
     if ($this->isTestMode()) {
@@ -450,60 +928,9 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     return !empty($this->_paymentProcessor['is_test']);
   }
 
-  /**
-   * This processor supports recurring contributions.
-   *
-   * @return bool
-   */
-  public function supportsRecurring(): bool {
-    return TRUE;
-  }
-
-  /**
-   * This processor supports cancelling recurring contributions.
-   *
-   * @return bool
-   */
-  protected function supportsCancelRecurring(): bool {
-    return TRUE;
-  }
-
-  /**
-   * This processor supports editing recurring contributions.
-   *
-   * @return bool
-   */
-  public function supportsEditRecurringContribution(): bool {
-    return TRUE;
-  }
-
-  /**
-   * Fields that can be edited on a recurring contribution.
-   *
-   * @return array
-   */
-  public function getEditableRecurringScheduleFields(): array {
-    return ['amount'];
-  }
-
-  /**
-   * No on-site payment form fields — Mollie handles payment collection.
-   *
-   * @return array
-   */
-  public function getPaymentFormFields(): array {
-    return [];
-  }
-
-  /**
-   * No billing address fields needed — address is collected on Mollie side.
-   *
-   * @param int $bltID
-   * @return array
-   */
-  public function getBillingAddressFields($bltID = NULL): array {
-    return [];
-  }
+  // ---------------------------------------------------------------------------
+  // Logging
+  // ---------------------------------------------------------------------------
 
   /**
    * Log an info-level message to the Mollie channel.
