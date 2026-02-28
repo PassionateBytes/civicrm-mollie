@@ -1,0 +1,11 @@
+{
+  "type": "search",
+  "title": "Mollie Payment Dashboard",
+  "placement": [],
+  "icon": "fa-credit-card",
+  "server_route": "civicrm/admin/mollie",
+  "permission": [
+    "administer CiviCRM"
+  ],
+  "permission_operator": "AND"
+}
