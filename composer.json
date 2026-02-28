@@ -1,0 +1,12 @@
+{
+  "name": "stichtinggast/civicrm-mollie",
+  "description": "CiviCRM Mollie Payment Processor Extension",
+  "license": "AGPL-3.0-or-later",
+  "require": {
+    "php": ">=8.1",
+    "mollie/mollie-api-php": "^2.0"
+  },
+  "config": {
+    "sort-packages": true
+  }
+}
