@@ -110,6 +110,149 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   }
 
   // ---------------------------------------------------------------------------
+  // Recurring lifecycle: cancel & amount change
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Cancel a Mollie subscription.
+   *
+   * Called by CiviCRM's doCancelRecurring() when staff cancels a recurring contribution.
+   *
+   * @param string|null $message
+   *   Feedback message (passed by reference).
+   * @param \Civi\Payment\PropertyBag|array $params
+   *
+   * @return bool
+   *   TRUE on success, FALSE on failure.
+   */
+  public function cancelSubscription(&$message = NULL, $params = []): bool {
+    $propertyBag = PropertyBag::cast($params);
+    $recurId = $propertyBag->getContributionRecurID();
+
+    $recur = \Civi\Api4\ContributionRecur::get(FALSE)
+      ->addSelect('processor_id', 'contact_id')
+      ->addWhere('id', '=', $recurId)
+      ->setLimit(1)
+      ->execute()
+      ->first();
+
+    if (empty($recur['processor_id'])) {
+      $message = E::ts('No Mollie subscription ID found for this recurring contribution.');
+      return FALSE;
+    }
+
+    $mollieCustomer = $this->findMollieCustomerByContactId($recur['contact_id']);
+    if ($mollieCustomer === NULL) {
+      $message = E::ts('No Mollie customer found for this contact.');
+      return FALSE;
+    }
+
+    try {
+      $this->getMollieApiClient()->subscriptions->cancelForId($mollieCustomer, $recur['processor_id']);
+
+      $this->logInfo('Mollie subscription cancelled', [
+        'subscription_id' => $recur['processor_id'],
+        'contribution_recur_id' => $recurId,
+      ]);
+
+      $message = E::ts('Mollie subscription has been cancelled.');
+      return TRUE;
+    }
+    catch (\Mollie\Api\Exceptions\ApiException $e) {
+      $this->logError('Failed to cancel Mollie subscription', [
+        'subscription_id' => $recur['processor_id'],
+        'error' => $e->getMessage(),
+      ]);
+      $message = E::ts('Failed to cancel the subscription on Mollie: %1', [1 => $e->getMessage()]);
+      return FALSE;
+    }
+  }
+
+  /**
+   * Update the amount of a Mollie subscription.
+   *
+   * @param string|null $message
+   *   Feedback message (passed by reference).
+   * @param array $params
+   *   Must include 'amount' and 'contributionRecurID'.
+   *
+   * @return bool
+   *   TRUE on success, FALSE on failure.
+   */
+  public function changeSubscriptionAmount(&$message = NULL, $params = []): bool {
+    $recurId = $params['contributionRecurID'] ?? ($params['id'] ?? NULL);
+    $newAmount = $params['amount'] ?? NULL;
+
+    if ($recurId === NULL || $newAmount === NULL) {
+      $message = E::ts('Missing required parameters for amount change.');
+      return FALSE;
+    }
+
+    $recur = \Civi\Api4\ContributionRecur::get(FALSE)
+      ->addSelect('processor_id', 'contact_id', 'currency')
+      ->addWhere('id', '=', $recurId)
+      ->setLimit(1)
+      ->execute()
+      ->first();
+
+    if (empty($recur['processor_id'])) {
+      $message = E::ts('No Mollie subscription ID found for this recurring contribution.');
+      return FALSE;
+    }
+
+    $mollieCustomer = $this->findMollieCustomerByContactId($recur['contact_id']);
+    if ($mollieCustomer === NULL) {
+      $message = E::ts('No Mollie customer found for this contact.');
+      return FALSE;
+    }
+
+    try {
+      $this->getMollieApiClient()->subscriptions->update($mollieCustomer, $recur['processor_id'], [
+        'amount' => [
+          'currency' => $recur['currency'],
+          'value' => number_format((float) $newAmount, 2, '.', ''),
+        ],
+      ]);
+
+      $this->logInfo('Mollie subscription amount updated', [
+        'subscription_id' => $recur['processor_id'],
+        'contribution_recur_id' => $recurId,
+        'new_amount' => $newAmount,
+      ]);
+
+      $message = E::ts('Subscription amount updated on Mollie.');
+      return TRUE;
+    }
+    catch (\Mollie\Api\Exceptions\ApiException $e) {
+      $this->logError('Failed to update Mollie subscription amount', [
+        'subscription_id' => $recur['processor_id'],
+        'error' => $e->getMessage(),
+      ]);
+      $message = E::ts('Failed to update subscription amount on Mollie: %1', [1 => $e->getMessage()]);
+      return FALSE;
+    }
+  }
+
+  /**
+   * Find the Mollie customer ID for a CiviCRM contact.
+   *
+   * @param int $contactId
+   *
+   * @return string|null
+   *   Mollie customer ID or null if not found.
+   */
+  protected function findMollieCustomerByContactId(int $contactId): ?string {
+    $result = \Civi\Api4\MollieCustomer::get(FALSE)
+      ->addSelect('mollie_customer_id')
+      ->addWhere('contact_id', '=', $contactId)
+      ->addWhere('payment_processor_id', '=', $this->_paymentProcessor['id'])
+      ->setLimit(1)
+      ->execute();
+
+    return $result->count() > 0 ? $result->first()['mollie_customer_id'] : NULL;
+  }
+
+  // ---------------------------------------------------------------------------
   // Payment initiation
   // ---------------------------------------------------------------------------
 
