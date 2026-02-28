@@ -1,6 +1,7 @@
 <?php
 
 use Civi\Payment\Exception\PaymentProcessorException;
+use Civi\Payment\PropertyBag;
 use CRM_Mollie_ExtensionUtil as E;
 
 /**
@@ -44,6 +45,350 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         1 => $this->isTestMode() ? 'test' : 'live',
         2 => $prefix,
       ]);
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Initiate a one-off or first recurring payment via Mollie.
+   *
+   * Creates a Mollie payment, stores the payment ID on the contribution,
+   * and redirects the donor to Mollie's checkout page.
+   *
+   * @param array|PropertyBag $params
+   * @param string $component
+   *   'contribute' or 'event'.
+   *
+   * @return array
+   *   Result array with payment_status_id.
+   *
+   * @throws PaymentProcessorException
+   */
+  public function doPayment(&$params, $component = 'contribute'): array {
+    $propertyBag = PropertyBag::cast($params);
+    $this->_component = $component;
+
+    if ($propertyBag->getAmount() == 0) {
+      return $this->setStatusPaymentCompleted([]);
+    }
+
+    $isRecur = !empty($params['is_recur']);
+    $contributionId = $propertyBag->getContributionID();
+    $contactId = $propertyBag->getContactID();
+
+    $paymentParams = [
+      'amount' => [
+        'currency' => $propertyBag->getCurrency(),
+        'value' => number_format((float) $propertyBag->getAmount(), 2, '.', ''),
+      ],
+      'description' => $this->buildPaymentDescription($contributionId),
+      'redirectUrl' => $this->getReturnSuccessUrl($params['qfKey']),
+      'webhookUrl' => $this->getNotifyUrl(),
+      'metadata' => [
+        'contribution_id' => $contributionId,
+        'contact_id' => $contactId,
+      ],
+    ];
+
+    $locale = $this->getMollieLocale($contactId);
+    if ($locale !== NULL) {
+      $paymentParams['locale'] = $locale;
+    }
+
+    if ($isRecur) {
+      $paymentParams = $this->addRecurringPaymentParams($paymentParams, $params);
+    }
+
+    try {
+      $molliePayment = $this->getMollieApiClient()->payments->create($paymentParams);
+    }
+    catch (\Mollie\Api\Exceptions\ApiException $e) {
+      $this->logError('Failed to create Mollie payment', [
+        'error' => $e->getMessage(),
+        'contribution_id' => $contributionId,
+        'api_key' => $this->getApiKeyForLog(),
+      ]);
+      throw new PaymentProcessorException(
+        E::ts('Payment could not be initiated. Please try again or choose a different payment method.')
+      );
+    }
+
+    // Store the Mollie payment ID on the contribution for webhook lookup.
+    \Civi\Api4\Contribution::update(FALSE)
+      ->addWhere('id', '=', $contributionId)
+      ->addValue('trxn_id', $molliePayment->id)
+      ->execute();
+
+    $this->logInfo('Mollie payment created', [
+      'mollie_id' => $molliePayment->id,
+      'contribution_id' => $contributionId,
+      'amount' => $paymentParams['amount']['value'],
+      'is_recur' => $isRecur,
+    ]);
+
+    // Redirect the donor to Mollie's checkout page.
+    CRM_Utils_System::redirect($molliePayment->getCheckoutUrl());
+
+    // Unreachable — redirect exits PHP. Return for static analysis.
+    return $this->setStatusPaymentPending(['trxn_id' => $molliePayment->id]);
+  }
+
+  /**
+   * Handle incoming Mollie webhook notification.
+   *
+   * Called by CiviCRM's core IPN route dispatcher. Mollie POSTs
+   * form-encoded data with `id=<payment_id>`.
+   */
+  public function handlePaymentNotification(): void {
+    $paymentId = $_POST['id'] ?? NULL;
+    if (empty($paymentId)) {
+      $this->logWarning('Webhook received without payment ID');
+      http_response_code(200);
+      return;
+    }
+
+    $this->logDebug('Webhook received', ['mollie_payment_id' => $paymentId]);
+
+    try {
+      $molliePayment = $this->getMollieApiClient()->payments->get($paymentId);
+    }
+    catch (\Mollie\Api\Exceptions\ApiException $e) {
+      $this->logError('Failed to fetch Mollie payment in webhook', [
+        'mollie_payment_id' => $paymentId,
+        'error' => $e->getMessage(),
+      ]);
+      http_response_code(500);
+      return;
+    }
+
+    $this->logDebug('Mollie payment fetched', [
+      'mollie_payment_id' => $paymentId,
+      'status' => $molliePayment->status,
+      'has_subscription' => !empty($molliePayment->subscriptionId),
+    ]);
+
+    if (!empty($molliePayment->subscriptionId)) {
+      $this->processRecurringPaymentWebhook($molliePayment);
+    }
+    else {
+      $this->processOneOffOrFirstPaymentWebhook($molliePayment);
+    }
+
+    http_response_code(200);
+  }
+
+  /**
+   * Process a webhook for a one-off payment or the first payment of a recurring series.
+   *
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   */
+  protected function processOneOffOrFirstPaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment): void {
+    $contribution = $this->findContributionByTrxnId($molliePayment->id);
+    if ($contribution === NULL) {
+      $this->logWarning('Webhook for unknown contribution', [
+        'mollie_payment_id' => $molliePayment->id,
+      ]);
+      return;
+    }
+
+    // Idempotency: skip if already completed.
+    if ($contribution['contribution_status_id:name'] === 'Completed') {
+      $this->logDebug('Contribution already completed, skipping', [
+        'contribution_id' => $contribution['id'],
+      ]);
+      return;
+    }
+
+    if ($molliePayment->isPaid()) {
+      $this->completeContribution($contribution, $molliePayment);
+
+      // If this was the first payment of a recurring series, set up the subscription.
+      if ($molliePayment->sequenceType === 'first' && !empty($contribution['contribution_recur_id'])) {
+        $this->handleFirstRecurringPaymentCompleted($contribution, $molliePayment);
+      }
+    }
+    elseif ($molliePayment->isFailed() || $molliePayment->isCanceled() || $molliePayment->isExpired()) {
+      $this->failContribution($contribution, $molliePayment);
+    }
+  }
+
+  /**
+   * Process a webhook for a recurring installment payment (Mollie-initiated).
+   *
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   */
+  protected function processRecurringPaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment): void {
+    // Recurring installments are handled in Stage 5.
+    $this->logWarning('Recurring payment webhook received but not yet implemented', [
+      'mollie_payment_id' => $molliePayment->id,
+      'subscription_id' => $molliePayment->subscriptionId,
+    ]);
+  }
+
+  /**
+   * Complete a contribution after a successful Mollie payment.
+   *
+   * @param array $contribution
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   */
+  protected function completeContribution(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
+    $params = [
+      'id' => $contribution['id'],
+      'trxn_id' => $molliePayment->id,
+      'is_email_receipt' => $contribution['is_email_receipt'] ?? FALSE,
+    ];
+
+    if ($molliePayment->settlementAmount !== NULL) {
+      $feeAmount = (float) $molliePayment->amount->value - (float) $molliePayment->settlementAmount->value;
+      if ($feeAmount > 0) {
+        $params['fee_amount'] = number_format($feeAmount, 2, '.', '');
+      }
+    }
+
+    try {
+      civicrm_api3('Contribution', 'completetransaction', $params);
+
+      $this->logInfo('Contribution completed', [
+        'contribution_id' => $contribution['id'],
+        'mollie_payment_id' => $molliePayment->id,
+        'payment_method' => $molliePayment->method ?? 'unknown',
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->logError('Failed to complete contribution', [
+        'contribution_id' => $contribution['id'],
+        'error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Mark a contribution as failed or cancelled.
+   *
+   * @param array $contribution
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   */
+  protected function failContribution(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
+    $statusName = $molliePayment->isCanceled() ? 'Cancelled' : 'Failed';
+
+    try {
+      \Civi\Api4\Contribution::update(FALSE)
+        ->addWhere('id', '=', $contribution['id'])
+        ->addValue('contribution_status_id:name', $statusName)
+        ->addValue('cancel_date', date('Y-m-d H:i:s'))
+        ->execute();
+
+      $this->logInfo('Contribution marked as ' . $statusName, [
+        'contribution_id' => $contribution['id'],
+        'mollie_payment_id' => $molliePayment->id,
+        'mollie_status' => $molliePayment->status,
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->logError('Failed to update contribution status', [
+        'contribution_id' => $contribution['id'],
+        'error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Handle the completion of the first payment in a recurring series.
+   *
+   * Verifies the mandate and creates the Mollie subscription.
+   * Implemented in Stage 5.
+   *
+   * @param array $contribution
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   */
+  protected function handleFirstRecurringPaymentCompleted(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
+    // Stub — full implementation in Stage 5.
+    $this->logInfo('First recurring payment completed, subscription setup pending', [
+      'contribution_id' => $contribution['id'],
+      'mollie_payment_id' => $molliePayment->id,
+    ]);
+  }
+
+  /**
+   * Add recurring-specific parameters to a Mollie payment request.
+   *
+   * Implemented in Stage 5.
+   *
+   * @param array $paymentParams
+   *   Base Mollie payment parameters.
+   * @param array $params
+   *   CiviCRM payment parameters.
+   *
+   * @return array
+   *   Modified payment parameters with recurring fields.
+   */
+  protected function addRecurringPaymentParams(array $paymentParams, array $params): array {
+    // Stub — full implementation in Stage 5.
+    return $paymentParams;
+  }
+
+  /**
+   * Find a contribution by its Mollie payment ID (trxn_id).
+   *
+   * @param string $trxnId
+   *
+   * @return array|null
+   *   Contribution record or null if not found.
+   */
+  protected function findContributionByTrxnId(string $trxnId): ?array {
+    $contributions = \Civi\Api4\Contribution::get(FALSE)
+      ->addSelect('*')
+      ->addSelect('contribution_status_id:name')
+      ->addWhere('trxn_id', '=', $trxnId)
+      ->setLimit(1)
+      ->execute();
+
+    return $contributions->count() > 0 ? $contributions->first() : NULL;
+  }
+
+  /**
+   * Build the payment description from the configured template.
+   *
+   * @param int $contributionId
+   *
+   * @return string
+   */
+  protected function buildPaymentDescription(int $contributionId): string {
+    $template = \Civi::settings()->get('mollie_payment_description') ?? 'Donation #{contribution.id}';
+    return str_replace('{contribution.id}', (string) $contributionId, $template);
+  }
+
+  /**
+   * Get the Mollie locale for a contact, if available.
+   *
+   * @param int $contactId
+   *
+   * @return string|null
+   *   Mollie-compatible locale string (e.g. 'nl_NL') or null.
+   */
+  protected function getMollieLocale(int $contactId): ?string {
+    $mollieLocales = [
+      'en_US', 'en_GB', 'nl_NL', 'nl_BE', 'fr_FR', 'fr_BE',
+      'de_DE', 'de_AT', 'de_CH', 'es_ES', 'ca_ES', 'pt_PT',
+      'it_IT', 'nb_NO', 'sv_SE', 'fi_FI', 'da_DK', 'is_IS',
+      'hu_HU', 'pl_PL', 'lv_LV', 'lt_LT',
+    ];
+
+    try {
+      $contacts = \Civi\Api4\Contact::get(FALSE)
+        ->addSelect('preferred_language')
+        ->addWhere('id', '=', $contactId)
+        ->setLimit(1)
+        ->execute();
+
+      $lang = $contacts->first()['preferred_language'] ?? NULL;
+      if ($lang !== NULL && in_array($lang, $mollieLocales, TRUE)) {
+        return $lang;
+      }
+    }
+    catch (\Exception $e) {
+      // Non-critical — proceed without locale.
     }
 
     return NULL;
