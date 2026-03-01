@@ -1,16 +1,19 @@
 <af-tabset>
   <af-tab title="Payments">
     <div af-fieldset="">
+      <p class="help">One-off and recurring contributions processed through Mollie. Click a payment ID to view it in the Mollie dashboard.</p>
       <crm-search-display-table search-name="Mollie_Payments" display-name="Mollie_Payments_Table"></crm-search-display-table>
     </div>
   </af-tab>
   <af-tab title="Subscriptions">
     <div af-fieldset="">
+      <p class="help">Recurring donation series managed by Mollie. Mollie automatically charges donors on schedule and notifies CiviCRM via webhook.</p>
       <crm-search-display-table search-name="Mollie_Subscriptions" display-name="Mollie_Subscriptions_Table"></crm-search-display-table>
     </div>
   </af-tab>
   <af-tab title="Customers">
     <div af-fieldset="">
+      <p class="help">CiviCRM contacts linked to Mollie customer records. A customer record is created when a contact first makes a recurring donation.</p>
       <crm-search-display-table search-name="Mollie_Customers" display-name="Mollie_Customers_Table"></crm-search-display-table>
     </div>
   </af-tab>
