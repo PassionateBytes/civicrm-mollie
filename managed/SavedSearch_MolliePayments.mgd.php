@@ -34,14 +34,7 @@ return [
             ['trxn_id', 'LIKE', 'tr_%'],
           ],
           'groupBy' => [],
-          'join' => [
-            [
-              'PaymentProcessorType AS ppt',
-              'INNER',
-              ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
-              ['ppt.name', '=', '"mollie"'],
-            ],
-          ],
+          'join' => [],
           'having' => [],
         ],
       ],

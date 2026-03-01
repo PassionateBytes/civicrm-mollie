@@ -21,7 +21,7 @@ return [
         'weight' => 90,
         'url' => 'civicrm/admin/mollie',
         'is_active' => TRUE,
-        'icon' => 'crm-i fa-credit-card',
+        'icon' => '',
       ],
       'match' => ['domain_id', 'name'],
     ],
