@@ -10,9 +10,13 @@ use CRM_Mollie_ExtensionUtil as E;
 /**
  * MollieSync API action.
  *
- * Scheduled job that synchronizes Mollie subscription statuses with
- * CiviCRM ContributionRecur records. Detects completed, cancelled,
- * and suspended subscriptions that may not have triggered webhooks.
+ * Scheduled job that performs bidirectional synchronization between
+ * Mollie subscription statuses and CiviCRM ContributionRecur records.
+ *
+ * - Mollie → CiviCRM: detects completed, cancelled, and suspended
+ *   subscriptions that may not have triggered webhooks.
+ * - CiviCRM → Mollie: retries cancellations that failed to reach
+ *   Mollie (e.g. due to network issues or API outages).
  */
 class MollieSync {
 
@@ -23,8 +27,35 @@ class MollieSync {
    *   Summary of actions taken.
    */
   public static function run(): array {
-    $stats = ['checked' => 0, 'completed' => 0, 'cancelled' => 0, 'failed' => 0, 'errors' => 0];
+    $stats = [
+      'checked' => 0,
+      'completed' => 0,
+      'cancelled' => 0,
+      'failed' => 0,
+      'cancellations_retried' => 0,
+      'cancellations_failed' => 0,
+      'errors' => 0,
+    ];
 
+    self::syncMollieStatusesToCiviCrm($stats);
+    self::retryCancellations($stats);
+
+    \Civi::log('mollie')->info('MollieSync completed', $stats);
+
+    return $stats;
+  }
+
+  /**
+   * Sync Mollie subscription statuses into CiviCRM.
+   *
+   * Queries all active/pending CiviCRM recurring contributions that
+   * have a Mollie subscription ID, fetches their status from Mollie,
+   * and updates CiviCRM if the status has changed.
+   *
+   * @param array $stats
+   *   Running statistics (modified by reference).
+   */
+  protected static function syncMollieStatusesToCiviCrm(array &$stats): void {
     $activeRecurs = ContributionRecur::get(FALSE)
       ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id', 'contribution_status_id:name')
       ->addWhere('processor_id', 'IS NOT NULL')
@@ -48,8 +79,9 @@ class MollieSync {
           continue;
         }
 
-        $processor = System::singleton()->getById($recur['payment_processor_id']);
-        $client = self::getClientForProcessor($processor);
+        $client = self::getClientForProcessor(
+          System::singleton()->getById($recur['payment_processor_id'])
+        );
 
         $subscription = $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']);
         $mollieStatus = $subscription->status;
@@ -86,10 +118,63 @@ class MollieSync {
         ]);
       }
     }
+  }
 
-    \Civi::log('mollie')->info('MollieSync completed', $stats);
+  /**
+   * Retry cancellations that failed to reach Mollie.
+   *
+   * Finds CiviCRM recurring contributions marked as Cancelled that
+   * still have an active or pending subscription on Mollie's side,
+   * and cancels them.
+   *
+   * @param array $stats
+   *   Running statistics (modified by reference).
+   */
+  protected static function retryCancellations(array &$stats): void {
+    $cancelledRecurs = ContributionRecur::get(FALSE)
+      ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id')
+      ->addWhere('processor_id', 'IS NOT NULL')
+      ->addWhere('processor_id', '!=', '')
+      ->addWhere('contribution_status_id:name', '=', 'Cancelled')
+      ->addJoin('PaymentProcessorType AS ppt', 'INNER',
+        ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
+        ['ppt.name', '=', '"mollie"']
+      )
+      ->execute();
 
-    return $stats;
+    foreach ($cancelledRecurs as $recur) {
+      try {
+        $mollieCustomerId = self::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
+        if ($mollieCustomerId === NULL) {
+          continue;
+        }
+
+        $client = self::getClientForProcessor(
+          System::singleton()->getById($recur['payment_processor_id'])
+        );
+
+        $subscription = $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']);
+
+        if (!in_array($subscription->status, ['active', 'pending'], TRUE)) {
+          continue;
+        }
+
+        $client->subscriptions->cancelForId($mollieCustomerId, $recur['processor_id']);
+        $stats['cancellations_retried']++;
+
+        \Civi::log('mollie')->info('Sync: retried cancellation on Mollie', [
+          'contribution_recur_id' => $recur['id'],
+          'subscription_id' => $recur['processor_id'],
+        ]);
+      }
+      catch (\Exception $e) {
+        $stats['cancellations_failed']++;
+        \Civi::log('mollie')->error('Sync: failed to retry cancellation', [
+          'contribution_recur_id' => $recur['id'],
+          'error' => $e->getMessage(),
+        ]);
+      }
+    }
   }
 
   /**

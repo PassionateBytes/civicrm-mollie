@@ -486,7 +486,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     if ($molliePayment->isPaid()) {
       $this->createRecurringInstallment($contributionRecur, $molliePayment);
     }
-    elseif ($molliePayment->isFailed()) {
+    elseif ($molliePayment->isFailed() || $molliePayment->isExpired() || $molliePayment->isCanceled()) {
       $this->recordFailedRecurringInstallment($contributionRecur, $molliePayment);
     }
   }
@@ -838,8 +838,11 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   protected function verifyMandate(string $customerId): ?string {
     try {
       $mandates = $this->getMollieApiClient()->mandates->listForId($customerId);
+      // Accept both valid and pending mandates. SEPA mandates from iDEAL
+      // can briefly be "pending" before transitioning to "valid".
+      // Mollie allows subscription creation with pending mandates.
       foreach ($mandates as $mandate) {
-        if ($mandate->isValid()) {
+        if ($mandate->isValid() || $mandate->isPending()) {
           return $mandate->id;
         }
       }
