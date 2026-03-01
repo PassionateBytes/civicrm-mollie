@@ -30,7 +30,7 @@
     <namespace>CRM/Mollie</namespace>
     <format>23.02.1</format>
   </civix>
-  <upgrader>CiviMix\Schema\Mollie\AutomaticUpgrader</upgrader>
+  <upgrader>CRM_Mollie_Upgrader</upgrader>
   <mixins>
     <mixin>entity-types-php@2.0.0</mixin>
     <mixin>mgd-php@1.0.0</mixin>
