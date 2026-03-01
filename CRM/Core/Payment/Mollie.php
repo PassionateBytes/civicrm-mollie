@@ -293,8 +293,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       'redirectUrl' => $this->getReturnSuccessUrl($params['qfKey']),
       'webhookUrl' => $this->getNotifyUrl(),
       'metadata' => [
-        'contribution_id' => $contributionId,
-        'contact_id' => $contactId,
+        'civicrm' => [
+          'contribution_id' => $contributionId,
+          'contact_id' => $contactId,
+        ],
       ],
     ];
 
@@ -365,7 +367,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
 
     $paymentParams['sequenceType'] = 'first';
     $paymentParams['customerId'] = $mollieCustomerId;
-    $paymentParams['metadata']['contribution_recur_id'] = $params['contributionRecurID'] ?? NULL;
+    $paymentParams['metadata']['civicrm']['contribution_recur_id'] = $params['contributionRecurID'] ?? NULL;
 
     return $paymentParams;
   }
@@ -656,8 +658,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       'webhookUrl' => $this->getNotifyUrl(),
       'mandateId' => $mandateId,
       'metadata' => [
-        'contribution_recur_id' => $recur['id'],
-        'contact_id' => $recur['contact_id'],
+        'civicrm' => [
+          'contribution_recur_id' => $recur['id'],
+          'contact_id' => $recur['contact_id'],
+        ],
       ],
     ];
 
@@ -800,7 +804,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       $mollieCustomer = $this->getMollieApiClient()->customers->create([
         'name' => $contact['display_name'] ?? '',
         'email' => $contact['email_primary.email'] ?? '',
-        'metadata' => ['contact_id' => $contactId],
+        'metadata' => ['civicrm' => ['contact_id' => $contactId]],
       ]);
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
