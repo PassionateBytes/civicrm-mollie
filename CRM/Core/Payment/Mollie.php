@@ -1056,9 +1056,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * @return string
    */
   protected function getApiKey(): string {
-    if ($this->isTestMode()) {
-      return $this->_paymentProcessor['password'] ?? '';
-    }
     return $this->_paymentProcessor['user_name'] ?? '';
   }
 
