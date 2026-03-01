@@ -1,0 +1,41 @@
+<?php return array(
+    'root' => array(
+        'name' => 'stichtinggast/civicrm-mollie',
+        'pretty_version' => 'dev-main',
+        'version' => 'dev-main',
+        'reference' => '1e0e3b814396b2ca609e2108d81f1832171f9fb2',
+        'type' => 'library',
+        'install_path' => __DIR__ . '/../../',
+        'aliases' => array(),
+        'dev' => false,
+    ),
+    'versions' => array(
+        'composer/ca-bundle' => array(
+            'pretty_version' => '1.5.10',
+            'version' => '1.5.10.0',
+            'reference' => '961a5e4056dd2e4a2eedcac7576075947c28bf63',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/./ca-bundle',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'mollie/mollie-api-php' => array(
+            'pretty_version' => 'v2.79.1',
+            'version' => '2.79.1.0',
+            'reference' => '4c1cf5f603178dd15bdf60b5e3999f91bb59f5b0',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../mollie/mollie-api-php',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+        'stichtinggast/civicrm-mollie' => array(
+            'pretty_version' => 'dev-main',
+            'version' => 'dev-main',
+            'reference' => '1e0e3b814396b2ca609e2108d81f1832171f9fb2',
+            'type' => 'library',
+            'install_path' => __DIR__ . '/../../',
+            'aliases' => array(),
+            'dev_requirement' => false,
+        ),
+    ),
+);
