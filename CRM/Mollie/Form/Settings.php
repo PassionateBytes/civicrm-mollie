@@ -29,6 +29,8 @@ class CRM_Mollie_Form_Settings extends CRM_Core_Form {
     $this->add('text', 'mollie_reminder_days_before', E::ts('Reminder Days Before Charge'), ['size' => 4], FALSE);
     $this->addElement('checkbox', 'mollie_debug_logging', E::ts('Enable Debug Logging'));
 
+    $this->assign('reminderTemplateUrl', $this->getReminderTemplateUrl());
+
     $this->addButtons([
       [
         'type' => 'submit',
@@ -40,6 +42,32 @@ class CRM_Mollie_Form_Settings extends CRM_Core_Form {
         'name' => E::ts('Cancel'),
       ],
     ]);
+  }
+
+  /**
+   * Get the URL to edit the recurring reminder message template.
+   *
+   * @return string|null
+   *   Edit URL, or null if the template doesn't exist yet.
+   */
+  private function getReminderTemplateUrl(): ?string {
+    $template = \Civi\Api4\MessageTemplate::get(FALSE)
+      ->addSelect('id')
+      ->addWhere('workflow_name', '=', 'mollie_recurring_reminder')
+      ->addWhere('is_reserved', '=', FALSE)
+      ->setLimit(1)
+      ->execute()
+      ->first();
+
+    if ($template) {
+      return \CRM_Utils_System::url('civicrm/admin/messageTemplates/add', [
+        'action' => 'update',
+        'id' => $template['id'],
+        'reset' => 1,
+      ]);
+    }
+
+    return NULL;
   }
 
   public function setDefaultValues(): array {

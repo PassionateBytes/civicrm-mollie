@@ -24,6 +24,14 @@
         <p class="description">{ts domain="nl.stichtinggast.mollie"}Number of days before the charge date to send the reminder email.{/ts}</p>
       </td>
     </tr>
+    {if $reminderTemplateUrl}
+    <tr>
+      <td class="label">{ts domain="nl.stichtinggast.mollie"}Email Template{/ts}</td>
+      <td>
+        <a href="{$reminderTemplateUrl}"><i class="crm-i fa-chevron-right"></i> {ts domain="nl.stichtinggast.mollie"}Edit reminder email template{/ts}</a>
+      </td>
+    </tr>
+    {/if}
   </table>
 
   <h3>{ts domain="nl.stichtinggast.mollie"}Debugging{/ts}</h3>
