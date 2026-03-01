@@ -24,7 +24,8 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    *   Payment processor configuration.
    */
   public function __construct($mode, &$paymentProcessor) {
-    parent::__construct($mode, $paymentProcessor);
+    $this->_mode = $mode;
+    $this->_paymentProcessor = $paymentProcessor;
   }
 
   // ---------------------------------------------------------------------------
