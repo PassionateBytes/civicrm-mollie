@@ -120,6 +120,13 @@ return [
               'key' => 'processor_id',
               'label' => E::ts('Subscription ID'),
               'sortable' => TRUE,
+              'link' => [
+                'path' => 'https://my.mollie.com/dashboard/subscriptions/[processor_id]',
+                'entity' => '',
+                'action' => '',
+                'join' => '',
+                'target' => '_blank',
+              ],
             ],
             [
               'type' => 'field',

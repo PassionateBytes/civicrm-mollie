@@ -110,6 +110,13 @@ return [
               'key' => 'trxn_id',
               'label' => E::ts('Mollie Payment ID'),
               'sortable' => TRUE,
+              'link' => [
+                'path' => 'https://my.mollie.com/dashboard/payments/[trxn_id]',
+                'entity' => '',
+                'action' => '',
+                'join' => '',
+                'target' => '_blank',
+              ],
             ],
             [
               'type' => 'field',

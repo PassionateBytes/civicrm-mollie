@@ -90,6 +90,13 @@ return [
               'key' => 'mollie_customer_id',
               'label' => E::ts('Mollie Customer ID'),
               'sortable' => TRUE,
+              'link' => [
+                'path' => 'https://my.mollie.com/dashboard/customers/[mollie_customer_id]',
+                'entity' => '',
+                'action' => '',
+                'join' => '',
+                'target' => '_blank',
+              ],
             ],
             [
               'type' => 'field',
