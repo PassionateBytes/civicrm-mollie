@@ -26,4 +26,27 @@ return [
       'match' => ['domain_id', 'name'],
     ],
   ],
+  [
+    'name' => 'Navigation_MollieSettings',
+    'entity' => 'Navigation',
+    'cleanup' => 'always',
+    'update' => 'unmodified',
+    'params' => [
+      'version' => 4,
+      'values' => [
+        'name' => 'mollie_settings',
+        'label' => E::ts('Mollie Settings'),
+        'permission' => [
+          'administer CiviCRM',
+        ],
+        'permission_operator' => 'AND',
+        'parent_id.name' => 'CiviContribute',
+        'weight' => 900,
+        'url' => 'civicrm/admin/mollie/settings',
+        'is_active' => TRUE,
+        'icon' => '',
+      ],
+      'match' => ['domain_id', 'name'],
+    ],
+  ],
 ];

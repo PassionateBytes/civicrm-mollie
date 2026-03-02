@@ -15,42 +15,10 @@ class CRM_Mollie_WorkflowMessage_RecurringReminder extends GenericWorkflowMessag
   public const WORKFLOW = 'mollie_recurring_reminder';
 
   /**
-   * Recurring contribution amount (formatted).
-   *
-   * @var string
-   * @scope tplParams
-   */
-  public $recurAmount;
-
-  /**
-   * Recurring contribution currency.
-   *
-   * @var string
-   * @scope tplParams
-   */
-  public $recurCurrency;
-
-  /**
-   * Frequency description (e.g. "1 month").
-   *
-   * @var string
-   * @scope tplParams
-   */
-  public $recurFrequency;
-
-  /**
-   * Next scheduled charge date (formatted for display).
-   *
-   * @var string
-   * @scope tplParams
-   */
-  public $nextChargeDate;
-
-  /**
-   * ContributionRecur ID.
+   * ContributionRecur ID — provides {contribution_recur.*} tokens.
    *
    * @var int
-   * @scope tplParams
+   * @scope tokenContext as contributionRecurId
    */
   public $contributionRecurId;
 

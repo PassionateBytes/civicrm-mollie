@@ -102,17 +102,9 @@ class MollieRecurringReminder {
    *   Contact record with display_name and email.
    */
   protected static function sendReminder(array $recur, array $contact): void {
-    $nextDate = new \DateTime($recur['next_sched_contribution_date']);
-    $frequency = $recur['frequency_interval'] . ' ' . $recur['frequency_unit']
-      . ($recur['frequency_interval'] > 1 ? 's' : '');
-
     $message = new \CRM_Mollie_WorkflowMessage_RecurringReminder([
       'modelProps' => [
         'contactID' => $recur['contact_id'],
-        'recurAmount' => number_format((float) $recur['amount'], 2, '.', ''),
-        'recurCurrency' => $recur['currency'],
-        'recurFrequency' => $frequency,
-        'nextChargeDate' => \CRM_Utils_Date::customFormat($nextDate->format('Y-m-d')),
         'contributionRecurId' => $recur['id'],
       ],
     ]);

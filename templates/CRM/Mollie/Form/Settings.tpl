@@ -26,7 +26,7 @@
     </tr>
     {if $reminderTemplateUrl}
     <tr>
-      <td class="label">{ts domain="nl.stichtinggast.mollie"}Email Template{/ts}</td>
+      <td></td>
       <td>
         <a href="{$reminderTemplateUrl}"><i class="crm-i fa-chevron-right"></i> {ts domain="nl.stichtinggast.mollie"}Edit reminder email template{/ts}</a>
       </td>

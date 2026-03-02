@@ -2,7 +2,7 @@
 
 ## Decisions & Notes
 
-- **Webhook URL**: `civicrm/payment/ipn/mollie/{processor_id}` — processor_id embedded in URL for API key resolution
+- **Webhook URL**: Uses core IPN route `civicrm/payment/ipn/{processor_id}` via `getNotifyUrl()` — no custom route needed
 - **Scaffolding**: Manual creation, no civix dependency
 - **Managed entities**: APIv4 format (`'version' => 4, 'values' => [...]`)
 - **API calls**: APIv4 everywhere except `Contribution.completetransaction` and `Contribution.repeattransaction` (v3 only in CiviCRM 6)

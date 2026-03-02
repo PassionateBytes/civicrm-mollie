@@ -45,7 +45,7 @@ class CRM_Mollie_Form_Settings extends CRM_Core_Form {
   }
 
   /**
-   * Get the URL to edit the recurring reminder message template.
+   * Get the URL to edit the editable recurring reminder message template.
    *
    * @return string|null
    *   Edit URL, or null if the template doesn't exist yet.
@@ -60,11 +60,10 @@ class CRM_Mollie_Form_Settings extends CRM_Core_Form {
       ->first();
 
     if ($template) {
-      return \CRM_Utils_System::url('civicrm/admin/messageTemplates/add', [
-        'action' => 'update',
-        'id' => $template['id'],
+      return \CRM_Utils_System::url('civicrm/admin/messageTemplates', [
+        'action' => 'browse',
         'reset' => 1,
-      ]);
+      ]) . '#/edit?id=' . $template['id'];
     }
 
     return NULL;
