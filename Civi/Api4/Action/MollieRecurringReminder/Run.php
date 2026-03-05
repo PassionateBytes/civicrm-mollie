@@ -1,33 +1,32 @@
 <?php
 
-namespace Civi\Mollie\Api4;
+namespace Civi\Api4\Action\MollieRecurringReminder;
 
 use Civi\Api4\Activity;
-use Civi\Api4\ContributionRecur;
 use Civi\Api4\Contact;
+use Civi\Api4\ContributionRecur;
+use Civi\Api4\Generic\AbstractAction;
+use Civi\Api4\Generic\Result;
 use CRM_Mollie_ExtensionUtil as E;
 
 /**
- * MollieRecurringReminder API action.
+ * Run the Mollie recurring reminder job.
  *
- * Scheduled job that sends reminder emails to donors before their
- * next recurring charge date. Only runs if reminders are enabled
- * in extension settings.
+ * Sends reminder emails to donors before their next recurring charge date.
+ * Only runs if reminders are enabled in extension settings.
  */
-class MollieRecurringReminder {
+class Run extends AbstractAction {
 
   /**
-   * Run the reminder job.
-   *
-   * @return array
-   *   Summary of actions taken.
+   * @param Result $result
    */
-  public static function run(): array {
+  public function _run(Result $result): void {
     $stats = ['checked' => 0, 'sent' => 0, 'skipped' => 0, 'errors' => 0];
 
     if (!\Civi::settings()->get('mollie_reminder_enabled')) {
       \Civi::log('mollie')->info('MollieRecurringReminder: reminders disabled, skipping');
-      return $stats;
+      $result[] = $stats;
+      return;
     }
 
     $daysBefore = (int) (\Civi::settings()->get('mollie_reminder_days_before') ?? 7);
@@ -90,16 +89,14 @@ class MollieRecurringReminder {
 
     \Civi::log('mollie')->info('MollieRecurringReminder completed', $stats);
 
-    return $stats;
+    $result[] = $stats;
   }
 
   /**
    * Send the reminder email using the workflow message template.
    *
    * @param array $recur
-   *   ContributionRecur record.
    * @param array $contact
-   *   Contact record with display_name and email.
    */
   protected static function sendReminder(array $recur, array $contact): void {
     $message = new \CRM_Mollie_WorkflowMessage_RecurringReminder([
@@ -128,9 +125,6 @@ class MollieRecurringReminder {
 
   /**
    * Check if a reminder has already been sent for this billing cycle.
-   *
-   * Looks for a "Mollie Reminder Sent" activity linked to this recurring
-   * contribution with a date matching the current scheduled charge date.
    *
    * @param int $recurId
    * @param string $nextDate

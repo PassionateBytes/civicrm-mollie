@@ -593,17 +593,33 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
 
       $paymentTokenId = $this->createPaymentToken($contribution['contact_id'], $mandateId);
 
-      \Civi\Api4\ContributionRecur::update(FALSE)
-        ->addWhere('id', '=', $recurId)
-        ->addValue('payment_token_id', $paymentTokenId)
-        ->execute();
-
       $recur = \Civi\Api4\ContributionRecur::get(FALSE)
         ->addSelect('*')
         ->addWhere('id', '=', $recurId)
         ->setLimit(1)
         ->execute()
         ->first();
+
+      // If installments = 1, the first payment was the only payment.
+      // No subscription needed — mark the recurring series as complete.
+      if (!empty($recur['installments']) && (int) $recur['installments'] <= 1) {
+        \Civi\Api4\ContributionRecur::update(FALSE)
+          ->addWhere('id', '=', $recurId)
+          ->addValue('payment_token_id', $paymentTokenId)
+          ->addValue('contribution_status_id:name', 'Completed')
+          ->execute();
+
+        $this->logInfo('Single-installment recurring contribution completed (no subscription needed)', [
+          'contribution_recur_id' => $recurId,
+          'mollie_customer_id' => $customerId,
+        ]);
+        return;
+      }
+
+      \Civi\Api4\ContributionRecur::update(FALSE)
+        ->addWhere('id', '=', $recurId)
+        ->addValue('payment_token_id', $paymentTokenId)
+        ->execute();
 
       $subscriptionId = $this->createMollieSubscription($customerId, $mandateId, $recur);
 

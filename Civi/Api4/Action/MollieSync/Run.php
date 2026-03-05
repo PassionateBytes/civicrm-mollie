@@ -1,32 +1,27 @@
 <?php
 
-namespace Civi\Mollie\Api4;
+namespace Civi\Api4\Action\MollieSync;
 
 use Civi\Api4\ContributionRecur;
+use Civi\Api4\Generic\AbstractAction;
+use Civi\Api4\Generic\Result;
 use Civi\Api4\MollieCustomer;
 use Civi\Payment\System;
-use CRM_Mollie_ExtensionUtil as E;
 
 /**
- * MollieSync API action.
+ * Run the Mollie subscription synchronization.
  *
- * Scheduled job that performs bidirectional synchronization between
- * Mollie subscription statuses and CiviCRM ContributionRecur records.
- *
- * - Mollie → CiviCRM: detects completed, cancelled, and suspended
- *   subscriptions that may not have triggered webhooks.
- * - CiviCRM → Mollie: retries cancellations that failed to reach
- *   Mollie (e.g. due to network issues or API outages).
+ * Performs bidirectional sync between Mollie subscription statuses
+ * and CiviCRM ContributionRecur records:
+ * - Mollie -> CiviCRM: detects completed, cancelled, and suspended subscriptions.
+ * - CiviCRM -> Mollie: retries cancellations that failed to reach Mollie.
  */
-class MollieSync {
+class Run extends AbstractAction {
 
   /**
-   * Run the sync job.
-   *
-   * @return array
-   *   Summary of actions taken.
+   * @param Result $result
    */
-  public static function run(): array {
+  public function _run(Result $result): void {
     $stats = [
       'checked' => 0,
       'completed' => 0,
@@ -37,25 +32,20 @@ class MollieSync {
       'errors' => 0,
     ];
 
-    self::syncMollieStatusesToCiviCrm($stats);
-    self::retryCancellations($stats);
+    $this->syncMollieStatusesToCiviCrm($stats);
+    $this->retryCancellations($stats);
 
     \Civi::log('mollie')->info('MollieSync completed', $stats);
 
-    return $stats;
+    $result[] = $stats;
   }
 
   /**
    * Sync Mollie subscription statuses into CiviCRM.
    *
-   * Queries all active/pending CiviCRM recurring contributions that
-   * have a Mollie subscription ID, fetches their status from Mollie,
-   * and updates CiviCRM if the status has changed.
-   *
    * @param array $stats
-   *   Running statistics (modified by reference).
    */
-  protected static function syncMollieStatusesToCiviCrm(array &$stats): void {
+  protected function syncMollieStatusesToCiviCrm(array &$stats): void {
     $activeRecurs = ContributionRecur::get(FALSE)
       ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id', 'contribution_status_id:name')
       ->addWhere('processor_id', 'IS NOT NULL')
@@ -79,10 +69,7 @@ class MollieSync {
           continue;
         }
 
-        $client = self::getClientForProcessor(
-          System::singleton()->getById($recur['payment_processor_id'])
-        );
-
+        $client = self::getClientForProcessor($recur['payment_processor_id']);
         $subscription = $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']);
         $mollieStatus = $subscription->status;
 
@@ -123,14 +110,9 @@ class MollieSync {
   /**
    * Retry cancellations that failed to reach Mollie.
    *
-   * Finds CiviCRM recurring contributions marked as Cancelled that
-   * still have an active or pending subscription on Mollie's side,
-   * and cancels them.
-   *
    * @param array $stats
-   *   Running statistics (modified by reference).
    */
-  protected static function retryCancellations(array &$stats): void {
+  protected function retryCancellations(array &$stats): void {
     $cancelledRecurs = ContributionRecur::get(FALSE)
       ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id')
       ->addWhere('processor_id', 'IS NOT NULL')
@@ -149,10 +131,7 @@ class MollieSync {
           continue;
         }
 
-        $client = self::getClientForProcessor(
-          System::singleton()->getById($recur['payment_processor_id'])
-        );
-
+        $client = self::getClientForProcessor($recur['payment_processor_id']);
         $subscription = $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']);
 
         if (!in_array($subscription->status, ['active', 'pending'], TRUE)) {
@@ -183,7 +162,6 @@ class MollieSync {
    * @param string $mollieStatus
    *
    * @return string|null
-   *   CiviCRM status name, or null if no change needed.
    */
   protected static function mapMollieStatusToCiviCrm(string $mollieStatus): ?string {
     return match ($mollieStatus) {
@@ -215,18 +193,21 @@ class MollieSync {
   }
 
   /**
-   * Get an authenticated Mollie API client for a payment processor.
+   * Get an authenticated Mollie API client for a payment processor ID.
    *
-   * @param \CRM_Core_Payment_Mollie $processor
+   * @param int $processorId
    *
    * @return \Mollie\Api\MollieApiClient
    */
-  protected static function getClientForProcessor($processor): \Mollie\Api\MollieApiClient {
-    // Use reflection to access the protected getMollieApiClient method,
-    // or call the public-facing method if available.
-    $method = new \ReflectionMethod($processor, 'getMollieApiClient');
-    $method->setAccessible(TRUE);
-    return $method->invoke($processor);
+  protected static function getClientForProcessor(int $processorId): \Mollie\Api\MollieApiClient {
+    $processor = System::singleton()->getById($processorId);
+    $processorConfig = $processor->getPaymentProcessor();
+    $apiKey = $processorConfig['user_name'] ?? '';
+
+    $client = new \Mollie\Api\MollieApiClient();
+    $client->setApiKey($apiKey);
+
+    return $client;
   }
 
 }
