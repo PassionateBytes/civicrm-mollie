@@ -434,6 +434,14 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       return;
     }
 
+    // Chargebacks: Mollie re-sends the same payment ID webhook when a
+    // chargeback is filed. The payment stays "paid" but gains chargeback data.
+    // Must be checked before the idempotency skip.
+    if ($molliePayment->isPaid() && $molliePayment->hasChargebacks()) {
+      $this->handleChargeback($contribution, $molliePayment);
+      return;
+    }
+
     // Idempotency: skip if already completed.
     if ($contribution['contribution_status_id:name'] === 'Completed') {
       $this->logDebug('Contribution already completed, skipping', [
@@ -452,6 +460,12 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     }
     elseif ($molliePayment->isFailed() || $molliePayment->isCanceled() || $molliePayment->isExpired()) {
       $this->failContribution($contribution, $molliePayment);
+
+      // If this was the first payment of a recurring series, fail the recur too —
+      // no mandate will be created, so no subscription is possible.
+      if ($molliePayment->sequenceType === 'first' && !empty($contribution['contribution_recur_id'])) {
+        $this->failContributionRecur($contribution['contribution_recur_id'], $molliePayment);
+      }
     }
   }
 
@@ -466,8 +480,14 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   protected function processRecurringPaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment): void {
     $subscriptionId = $molliePayment->subscriptionId;
 
-    // Idempotency: check if we already recorded this payment.
+    // Chargebacks on recurring installments — same logic as one-off payments.
     $existing = $this->findContributionByTrxnId($molliePayment->id);
+    if ($existing !== NULL && $molliePayment->isPaid() && $molliePayment->hasChargebacks()) {
+      $this->handleChargeback($existing, $molliePayment);
+      return;
+    }
+
+    // Idempotency: skip if we already recorded this payment.
     if ($existing !== NULL) {
       $this->logDebug('Recurring payment already recorded, skipping', [
         'mollie_payment_id' => $molliePayment->id,
@@ -564,6 +584,160 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     }
   }
 
+  /**
+   * Mark a ContributionRecur as failed.
+   *
+   * Used when the first recurring payment fails or when mandate/subscription
+   * setup fails after a successful first payment — the recurring series
+   * cannot proceed.
+   *
+   * @param int $recurId
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   */
+  protected function failContributionRecur(int $recurId, \Mollie\Api\Resources\Payment $molliePayment): void {
+    $statusName = $molliePayment->isCanceled() ? 'Cancelled' : 'Failed';
+
+    try {
+      \Civi\Api4\ContributionRecur::update(FALSE)
+        ->addWhere('id', '=', $recurId)
+        ->addValue('contribution_status_id:name', $statusName)
+        ->addValue('cancel_date', date('Y-m-d H:i:s'))
+        ->addValue('end_date', date('Y-m-d H:i:s'))
+        ->addValue('next_sched_contribution_date', NULL)
+        ->execute();
+
+      $this->logInfo('ContributionRecur marked as ' . $statusName, [
+        'contribution_recur_id' => $recurId,
+        'mollie_payment_id' => $molliePayment->id,
+        'reason' => 'first payment or subscription setup failed',
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->logError('Failed to update ContributionRecur status', [
+        'contribution_recur_id' => $recurId,
+        'error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Handle a chargeback on a payment.
+   *
+   * Mollie re-sends the payment webhook when a chargeback is filed. The
+   * payment stays "paid" but gains chargeback data. We mark the CiviCRM
+   * contribution with the Chargeback status and log full details for staff.
+   *
+   * @param array $contribution
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   */
+  protected function handleChargeback(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
+    // Already marked as chargeback — nothing to do.
+    if ($contribution['contribution_status_id:name'] === 'Chargeback') {
+      $this->logDebug('Contribution already marked as Chargeback, skipping', [
+        'contribution_id' => $contribution['id'],
+      ]);
+      return;
+    }
+
+    try {
+      $chargebackAmount = $molliePayment->amountChargedBack !== NULL
+        ? $molliePayment->amountChargedBack->value
+        : 'unknown';
+      $currency = $molliePayment->amountChargedBack !== NULL
+        ? ($molliePayment->amountChargedBack->currency ?? 'EUR')
+        : ($molliePayment->amount->currency ?? 'EUR');
+
+      \Civi\Api4\Contribution::update(FALSE)
+        ->addWhere('id', '=', $contribution['id'])
+        ->addValue('contribution_status_id:name', 'Chargeback')
+        ->addValue('cancel_date', date('Y-m-d H:i:s'))
+        ->execute();
+
+      // Fetch chargeback details from Mollie for the paper trail.
+      $this->recordChargebackNote($contribution, $molliePayment, $chargebackAmount, $currency);
+
+      $this->logWarning('Chargeback received', [
+        'contribution_id' => $contribution['id'],
+        'mollie_payment_id' => $molliePayment->id,
+        'chargeback_amount' => $chargebackAmount,
+        'original_amount' => $molliePayment->amount->value ?? 'unknown',
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->logError('Failed to process chargeback', [
+        'contribution_id' => $contribution['id'],
+        'error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Attach a Note to the contribution with chargeback details from Mollie.
+   *
+   * Fetches chargeback records from Mollie's API and records the amount,
+   * date, and reason (if provided) as a CiviCRM Note on the contribution
+   * for staff reference.
+   *
+   * @param array $contribution
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   * @param string $chargebackAmount
+   * @param string $currency
+   */
+  protected function recordChargebackNote(
+    array $contribution,
+    \Mollie\Api\Resources\Payment $molliePayment,
+    string $chargebackAmount,
+    string $currency,
+  ): void {
+    $lines = [
+      E::ts('A chargeback was received on this contribution.'),
+      '',
+      E::ts('Chargeback amount: %1 %2', [1 => $chargebackAmount, 2 => $currency]),
+      E::ts('Original amount: %1 %2', [1 => $molliePayment->amount->value, 2 => $currency]),
+      E::ts('Mollie payment ID: %1', [1 => $molliePayment->id]),
+    ];
+
+    try {
+      $chargebacks = $molliePayment->chargebacks();
+      foreach ($chargebacks as $chargeback) {
+        $lines[] = '';
+        $lines[] = E::ts('Chargeback ID: %1', [1 => $chargeback->id]);
+        $lines[] = E::ts('Amount: %1 %2', [1 => $chargeback->amount->value, 2 => $chargeback->amount->currency]);
+        $lines[] = E::ts('Date: %1', [1 => $chargeback->createdAt ?? 'unknown']);
+
+        if ($chargeback->reason !== NULL) {
+          $reasonCode = $chargeback->reason->code ?? '';
+          $reasonDesc = $chargeback->reason->description ?? '';
+          $lines[] = E::ts('Reason: %1 — %2', [1 => $reasonCode, 2 => $reasonDesc]);
+        }
+
+        if ($chargeback->reversedAt !== NULL) {
+          $lines[] = E::ts('Reversed at: %1', [1 => $chargeback->reversedAt]);
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $lines[] = '';
+      $lines[] = E::ts('(Could not fetch chargeback details from Mollie: %1)', [1 => $e->getMessage()]);
+    }
+
+    try {
+      \Civi\Api4\Note::create(FALSE)
+        ->addValue('entity_table', 'civicrm_contribution')
+        ->addValue('entity_id', $contribution['id'])
+        ->addValue('subject', E::ts('Mollie Chargeback'))
+        ->addValue('note', implode("\n", $lines))
+        ->addValue('contact_id', $contribution['contact_id'])
+        ->execute();
+    }
+    catch (\Exception $e) {
+      $this->logError('Failed to create chargeback note', [
+        'contribution_id' => $contribution['id'],
+        'error' => $e->getMessage(),
+      ]);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Recurring: first payment → subscription setup
   // ---------------------------------------------------------------------------
@@ -588,6 +762,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
           'contribution_id' => $contribution['id'],
           'mollie_customer_id' => $customerId,
         ]);
+        $this->failContributionRecur($recurId, $molliePayment);
         return;
       }
 
@@ -642,6 +817,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'contribution_recur_id' => $recurId,
         'error' => $e->getMessage(),
       ]);
+      $this->failContributionRecur($recurId, $molliePayment);
     }
   }
 
@@ -924,6 +1100,9 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   /**
    * Find a ContributionRecur by its Mollie subscription ID (processor_id).
    *
+   * Scoped to the Mollie payment processor type to avoid false matches
+   * with other processors that also use the processor_id field.
+   *
    * @param string $subscriptionId
    *
    * @return array|null
@@ -932,6 +1111,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     $results = \Civi\Api4\ContributionRecur::get(FALSE)
       ->addSelect('*')
       ->addWhere('processor_id', '=', $subscriptionId)
+      ->addJoin('PaymentProcessorType AS ppt', 'INNER',
+        ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
+        ['ppt.name', '=', '"mollie"']
+      )
       ->setLimit(1)
       ->execute();
 
