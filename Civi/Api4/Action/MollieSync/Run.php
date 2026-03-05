@@ -7,14 +7,18 @@ use Civi\Api4\Generic\AbstractAction;
 use Civi\Api4\Generic\Result;
 use Civi\Api4\MollieCustomer;
 use Civi\Payment\System;
+use Mollie\Api\Resources\Subscription;
 
 /**
  * Run the Mollie subscription synchronization.
  *
- * Performs bidirectional sync between Mollie subscription statuses
- * and CiviCRM ContributionRecur records:
- * - Mollie -> CiviCRM: detects completed, cancelled, and suspended subscriptions.
- * - CiviCRM -> Mollie: retries cancellations that failed to reach Mollie.
+ * Performs bidirectional sync between Mollie subscriptions and CiviCRM
+ * ContributionRecur records. Mollie is the source of truth for all
+ * subscription-managed fields:
+ *
+ * - status, next_sched_contribution_date, amount, end_date, cancel_date
+ * - Mollie -> CiviCRM: syncs status and scheduling fields from Mollie
+ * - CiviCRM -> Mollie: retries cancellations that failed to reach Mollie
  */
 class Run extends AbstractAction {
 
@@ -24,6 +28,7 @@ class Run extends AbstractAction {
   public function _run(Result $result): void {
     $stats = [
       'checked' => 0,
+      'synced' => 0,
       'completed' => 0,
       'cancelled' => 0,
       'failed' => 0,
@@ -32,7 +37,7 @@ class Run extends AbstractAction {
       'errors' => 0,
     ];
 
-    $this->syncMollieStatusesToCiviCrm($stats);
+    $this->syncFromMollie($stats);
     $this->retryCancellations($stats);
 
     \Civi::log('mollie')->info('MollieSync completed', $stats);
@@ -41,13 +46,18 @@ class Run extends AbstractAction {
   }
 
   /**
-   * Sync Mollie subscription statuses into CiviCRM.
+   * Sync Mollie subscription state into CiviCRM.
+   *
+   * For each active/pending recurring contribution with a Mollie subscription,
+   * fetches the subscription from Mollie and updates CiviCRM fields to match.
    *
    * @param array $stats
    */
-  protected function syncMollieStatusesToCiviCrm(array &$stats): void {
+  protected function syncFromMollie(array &$stats): void {
     $activeRecurs = ContributionRecur::get(FALSE)
-      ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id', 'contribution_status_id:name')
+      ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id',
+        'contribution_status_id:name', 'next_sched_contribution_date', 'amount',
+        'currency', 'end_date', 'cancel_date')
       ->addWhere('processor_id', 'IS NOT NULL')
       ->addWhere('processor_id', '!=', '')
       ->addWhere('contribution_status_id:name', 'IN', ['In Progress', 'Pending'])
@@ -71,30 +81,34 @@ class Run extends AbstractAction {
 
         $client = self::getClientForProcessor($recur['payment_processor_id']);
         $subscription = $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']);
-        $mollieStatus = $subscription->status;
 
-        $newStatus = self::mapMollieStatusToCiviCrm($mollieStatus);
-        if ($newStatus === NULL || $newStatus === $recur['contribution_status_id:name']) {
+        $updates = $this->buildUpdatesFromSubscription($subscription, $recur);
+        if (empty($updates)) {
           continue;
         }
 
-        ContributionRecur::update(FALSE)
-          ->addWhere('id', '=', $recur['id'])
-          ->addValue('contribution_status_id:name', $newStatus)
-          ->execute();
+        $update = ContributionRecur::update(FALSE)
+          ->addWhere('id', '=', $recur['id']);
+        foreach ($updates as $field => $value) {
+          $update->addValue($field, $value);
+        }
+        $update->execute();
 
-        match ($newStatus) {
-          'Completed' => $stats['completed']++,
-          'Cancelled' => $stats['cancelled']++,
-          'Failed' => $stats['failed']++,
-          default => NULL,
-        };
+        $stats['synced']++;
 
-        \Civi::log('mollie')->info('Sync: updated ContributionRecur status', [
+        if (isset($updates['contribution_status_id:name'])) {
+          match ($updates['contribution_status_id:name']) {
+            'Completed' => $stats['completed']++,
+            'Cancelled' => $stats['cancelled']++,
+            'Failed' => $stats['failed']++,
+            default => NULL,
+          };
+        }
+
+        \Civi::log('mollie')->info('Sync: updated ContributionRecur from Mollie', [
           'contribution_recur_id' => $recur['id'],
           'subscription_id' => $recur['processor_id'],
-          'mollie_status' => $mollieStatus,
-          'new_civicrm_status' => $newStatus,
+          'updates' => $updates,
         ]);
       }
       catch (\Exception $e) {
@@ -105,6 +119,66 @@ class Run extends AbstractAction {
         ]);
       }
     }
+  }
+
+  /**
+   * Compare Mollie subscription state with CiviCRM and return needed updates.
+   *
+   * @param Subscription $subscription
+   *   Mollie subscription resource.
+   * @param array $recur
+   *   CiviCRM ContributionRecur record.
+   *
+   * @return array
+   *   Field => value pairs to update on the ContributionRecur, empty if no changes.
+   */
+  protected function buildUpdatesFromSubscription(Subscription $subscription, array $recur): array {
+    $updates = [];
+
+    // Status.
+    $newStatus = self::mapMollieStatusToCiviCrm($subscription->status);
+    if ($newStatus !== NULL && $newStatus !== $recur['contribution_status_id:name']) {
+      $updates['contribution_status_id:name'] = $newStatus;
+
+      if ($newStatus === 'Completed') {
+        $updates['end_date'] = date('Y-m-d H:i:s');
+        $updates['next_sched_contribution_date'] = NULL;
+      }
+      if ($newStatus === 'Cancelled') {
+        $updates['cancel_date'] = $subscription->canceledAt !== NULL
+          ? date('Y-m-d H:i:s', strtotime($subscription->canceledAt))
+          : date('Y-m-d H:i:s');
+        $updates['end_date'] = $updates['cancel_date'];
+        $updates['next_sched_contribution_date'] = NULL;
+      }
+      if ($newStatus === 'Failed') {
+        $updates['next_sched_contribution_date'] = NULL;
+      }
+    }
+
+    // Next payment date — only for active subscriptions.
+    if ($subscription->nextPaymentDate !== NULL && in_array($subscription->status, ['active', 'pending'], TRUE)) {
+      $mollieNextDate = $subscription->nextPaymentDate . ' 00:00:00';
+      $civiNextDate = $recur['next_sched_contribution_date'] !== NULL
+        ? date('Y-m-d', strtotime($recur['next_sched_contribution_date'])) . ' 00:00:00'
+        : NULL;
+
+      if ($civiNextDate !== $mollieNextDate) {
+        $updates['next_sched_contribution_date'] = $mollieNextDate;
+      }
+    }
+
+    // Amount — Mollie is authoritative if it was changed on their side.
+    if ($subscription->amount !== NULL && isset($subscription->amount->value)) {
+      $mollieAmount = number_format((float) $subscription->amount->value, 2, '.', '');
+      $civiAmount = number_format((float) $recur['amount'], 2, '.', '');
+
+      if ($mollieAmount !== $civiAmount) {
+        $updates['amount'] = $mollieAmount;
+      }
+    }
+
+    return $updates;
   }
 
   /**
