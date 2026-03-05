@@ -12,6 +12,9 @@ return [
     'description' => E::ts('Maps CiviCRM contacts to Mollie customer IDs for recurring payment support.'),
     'log' => TRUE,
     'label_field' => 'mollie_customer_id',
+    'permission' => [
+      ['access CiviContribute', 'administer CiviCRM'],
+    ],
   ],
   'getIndices' => fn() => [
     'UI_contact_processor' => [

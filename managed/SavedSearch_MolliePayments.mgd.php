@@ -26,12 +26,14 @@ return [
             'contribution_status_id:label',
             'fee_amount',
             'contribution_recur_id',
+            'is_test',
           ],
           'orderBy' => [
             'receive_date' => 'DESC',
           ],
           'where' => [
             ['trxn_id', 'LIKE', 'tr_%'],
+            ['OR', [['is_test', '=', 0], ['is_test', '=', 1]]],
           ],
           'groupBy' => [],
           'join' => [],
@@ -123,6 +125,12 @@ return [
               'label' => E::ts('Fee'),
               'sortable' => TRUE,
             ],
+          ],
+          'cssRules' => [
+            ['alert-warning', 'is_test', '=', TRUE],
+          ],
+          'filters' => [
+            ['key' => 'is_test', 'default' => FALSE],
           ],
         ],
         'acl_bypass' => FALSE,

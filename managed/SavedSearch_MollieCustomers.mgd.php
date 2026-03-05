@@ -20,9 +20,10 @@ return [
             'id',
             'contact_id.display_name',
             'mollie_customer_id',
-            'payment_processor_id:label',
+            'payment_processor_id.title',
             'created_date',
             'COUNT(ContributionRecur_MollieCustomer_contact_id_01.id) AS active_subscriptions',
+            'payment_processor_id.is_test',
           ],
           'orderBy' => [
             'created_date' => 'DESC',
@@ -100,7 +101,7 @@ return [
             ],
             [
               'type' => 'field',
-              'key' => 'payment_processor_id:label',
+              'key' => 'payment_processor_id.title',
               'label' => E::ts('Payment Processor'),
               'sortable' => TRUE,
             ],
@@ -116,6 +117,12 @@ return [
               'label' => E::ts('Created'),
               'sortable' => TRUE,
             ],
+          ],
+          'cssRules' => [
+            ['alert-warning', 'payment_processor_id.is_test', '=', TRUE],
+          ],
+          'filters' => [
+            ['key' => 'payment_processor_id.is_test', 'default' => FALSE],
           ],
         ],
         'acl_bypass' => FALSE,

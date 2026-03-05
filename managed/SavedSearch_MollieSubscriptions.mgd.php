@@ -28,6 +28,10 @@ return [
             'processor_id',
             'start_date',
             'failure_count',
+            'is_test',
+            'MAX(reminder_activity.activity_date_time) AS reminder_sent_date',
+            'MAX(reminder_activity.id) AS reminder_activity_id',
+            'mollie_customer.mollie_customer_id',
           ],
           'orderBy' => [
             'next_sched_contribution_date' => 'ASC',
@@ -35,14 +39,28 @@ return [
           'where' => [
             ['processor_id', 'IS NOT NULL'],
             ['processor_id', '!=', ''],
+            ['OR', [['is_test', '=', 0], ['is_test', '=', 1]]],
           ],
-          'groupBy' => [],
+          'groupBy' => ['id'],
           'join' => [
             [
               'PaymentProcessorType AS ppt',
               'INNER',
               ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
               ['ppt.name', '=', '"mollie"'],
+            ],
+            [
+              'Activity AS reminder_activity',
+              'LEFT',
+              ['id', '=', 'reminder_activity.source_record_id'],
+              ['reminder_activity.activity_type_id:name', '=', '"mollie_reminder_sent"'],
+              ['reminder_activity.status_id:name', '=', '"Completed"'],
+            ],
+            [
+              'MollieCustomer AS mollie_customer',
+              'LEFT',
+              ['contact_id', '=', 'mollie_customer.contact_id'],
+              ['payment_processor_id', '=', 'mollie_customer.payment_processor_id'],
             ],
           ],
           'having' => [],
@@ -111,6 +129,19 @@ return [
             ],
             [
               'type' => 'field',
+              'key' => 'reminder_sent_date',
+              'label' => E::ts('Reminder Sent'),
+              'sortable' => TRUE,
+              'link' => [
+                'path' => 'civicrm/activity/view?reset=1&action=view&id=[reminder_activity_id]&cid=[contact_id]',
+                'entity' => '',
+                'action' => '',
+                'join' => '',
+                'target' => '_blank',
+              ],
+            ],
+            [
+              'type' => 'field',
               'key' => 'contribution_status_id:label',
               'label' => E::ts('Status'),
               'sortable' => TRUE,
@@ -121,7 +152,7 @@ return [
               'label' => E::ts('Subscription ID'),
               'sortable' => TRUE,
               'link' => [
-                'path' => 'https://my.mollie.com/dashboard/subscriptions/[processor_id]',
+                'path' => 'https://my.mollie.com/dashboard/customers/[mollie_customer.mollie_customer_id]',
                 'entity' => '',
                 'action' => '',
                 'join' => '',
@@ -166,6 +197,10 @@ return [
               'IN',
               ['Cancelled', 'Failed', 'Completed'],
             ],
+            ['alert-warning', 'is_test', '=', TRUE],
+          ],
+          'filters' => [
+            ['key' => 'is_test', 'default' => FALSE],
           ],
         ],
         'acl_bypass' => FALSE,
