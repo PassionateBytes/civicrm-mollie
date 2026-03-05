@@ -18,8 +18,8 @@ class MollieCustomer extends Generic\DAOEntity {
   public static function permissions(): array {
     return [
       'meta' => ['access CiviCRM'],
-      'default' => ['administer CiviCRM'],
-      'get' => ['access CiviCRM'],
+      'default' => ['administer payment processors'],
+      'get' => ['access CiviContribute'],
     ];
   }
 

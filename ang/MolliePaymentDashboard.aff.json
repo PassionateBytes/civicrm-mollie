@@ -5,7 +5,7 @@
   "icon": "fa-credit-card",
   "server_route": "civicrm/admin/mollie",
   "permission": [
-    "administer CiviCRM"
+    "access CiviContribute"
   ],
   "permission_operator": "AND"
 }

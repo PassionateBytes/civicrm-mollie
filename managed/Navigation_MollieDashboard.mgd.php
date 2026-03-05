@@ -14,7 +14,7 @@ return [
         'name' => 'mollie_dashboard',
         'label' => E::ts('Mollie Payments'),
         'permission' => [
-          'administer CiviCRM',
+          'access CiviContribute',
         ],
         'permission_operator' => 'AND',
         'parent_id.name' => 'Contributions',
@@ -37,7 +37,7 @@ return [
         'name' => 'mollie_settings',
         'label' => E::ts('Mollie Settings'),
         'permission' => [
-          'administer CiviCRM',
+          'administer payment processors',
         ],
         'permission_operator' => 'AND',
         'parent_id.name' => 'CiviContribute',
