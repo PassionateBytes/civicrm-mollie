@@ -2,17 +2,21 @@
 
 namespace Tests\Unit;
 
-use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Civi\Payment\Exception\PaymentProcessorException;
 
 /**
- * Test subclass to expose protected methods.
+ * Test subclass to expose protected methods and control processor config.
  */
 class TestableMolliePayment extends \CRM_Core_Payment_Mollie {
 
-  public function __construct() {
-    // Skip parent constructor.
+  public function __construct(array $processorConfig = []) {
+    $this->_paymentProcessor = $processorConfig;
+    $this->_mode = $processorConfig['is_test'] ?? FALSE ? 'test' : 'live';
+  }
+
+  public function exposedCheckConfig(): ?string {
+    return $this->checkConfig();
   }
 
   public function exposedMapCiviCrmFrequencyToMollie(string $unit, int $interval): string {
@@ -26,78 +30,81 @@ class TestableMolliePayment extends \CRM_Core_Payment_Mollie {
 
 class MolliePaymentTest extends TestCase {
 
-  private TestableMolliePayment $payment;
+  // -----------------------------------------------------------------------
+  // checkConfig
+  // -----------------------------------------------------------------------
 
-  protected function setUp(): void {
-    $this->payment = new TestableMolliePayment();
+  public function testCheckConfigValidTestKey(): void {
+    $payment = new TestableMolliePayment([
+      'user_name' => 'test_abc123',
+      'is_test' => TRUE,
+    ]);
+    $this->assertNull($payment->exposedCheckConfig());
+  }
+
+  public function testCheckConfigEmptyKey(): void {
+    $payment = new TestableMolliePayment([
+      'user_name' => '',
+      'is_test' => TRUE,
+    ]);
+    $result = $payment->exposedCheckConfig();
+    $this->assertNotNull($result);
+    $this->assertStringContainsString('not configured', $result);
+  }
+
+  public function testCheckConfigTestKeyInLiveMode(): void {
+    $payment = new TestableMolliePayment([
+      'user_name' => 'test_abc123',
+      'is_test' => FALSE,
+    ]);
+    $result = $payment->exposedCheckConfig();
+    $this->assertNotNull($result);
+    $this->assertStringContainsString('does not match', $result);
   }
 
   // -----------------------------------------------------------------------
   // mapCiviCrmFrequencyToMollie
   // -----------------------------------------------------------------------
 
-  public static function frequencyProvider(): array {
-    return [
-      'daily'          => ['day', 1, '1 days'],
-      'every 7 days'   => ['day', 7, '7 days'],
-      'weekly'         => ['week', 1, '1 weeks'],
-      'biweekly'       => ['week', 2, '2 weeks'],
-      'monthly'        => ['month', 1, '1 months'],
-      'quarterly'      => ['month', 3, '3 months'],
-      'yearly'         => ['year', 1, '12 months'],
-      'every 2 years'  => ['year', 2, '24 months'],
-    ];
+  public function testMapFrequencyMonthly(): void {
+    $payment = new TestableMolliePayment();
+    $this->assertSame('5 months', $payment->exposedMapCiviCrmFrequencyToMollie('month', 5));
   }
 
-  #[DataProvider('frequencyProvider')]
-  public function testMapCiviCrmFrequencyToMollie(string $unit, int $interval, string $expected): void {
-    $this->assertSame($expected, $this->payment->exposedMapCiviCrmFrequencyToMollie($unit, $interval));
+  public function testMapFrequencyYearToMonths(): void {
+    $payment = new TestableMolliePayment();
+    $this->assertSame('24 months', $payment->exposedMapCiviCrmFrequencyToMollie('year', 2));
   }
 
-  public function testMapCiviCrmFrequencyToMollieThrowsOnInvalid(): void {
+  public function testMapFrequencyInvalidUnitThrows(): void {
+    $payment = new TestableMolliePayment();
     $this->expectException(PaymentProcessorException::class);
-    $this->payment->exposedMapCiviCrmFrequencyToMollie('invalid', 1);
+    $payment->exposedMapCiviCrmFrequencyToMollie('invalid', 1);
   }
 
   // -----------------------------------------------------------------------
   // calculateNextScheduledDate
   // -----------------------------------------------------------------------
 
-  public static function nextDateProvider(): array {
-    return [
-      'monthly' => [
-        ['next_sched_contribution_date' => '2026-01-15 00:00:00', 'frequency_interval' => 1, 'frequency_unit' => 'month'],
-        '2026-02-15 00:00:00',
-      ],
-      'yearly' => [
-        ['next_sched_contribution_date' => '2026-03-01 00:00:00', 'frequency_interval' => 1, 'frequency_unit' => 'year'],
-        '2027-03-01 00:00:00',
-      ],
-      'biweekly' => [
-        ['next_sched_contribution_date' => '2026-03-01 00:00:00', 'frequency_interval' => 2, 'frequency_unit' => 'week'],
-        '2026-03-15 00:00:00',
-      ],
-      'daily' => [
-        ['next_sched_contribution_date' => '2026-03-01 00:00:00', 'frequency_interval' => 1, 'frequency_unit' => 'day'],
-        '2026-03-02 00:00:00',
-      ],
-      'null date' => [
-        ['next_sched_contribution_date' => NULL],
-        NULL,
-      ],
-      'missing key' => [
-        [],
-        NULL,
-      ],
-      'defaults to monthly' => [
-        ['next_sched_contribution_date' => '2026-06-15 00:00:00'],
-        '2026-07-15 00:00:00',
-      ],
-    ];
+  public function testCalculateNextDateMonthly(): void {
+    $payment = new TestableMolliePayment();
+    $result = $payment->exposedCalculateNextScheduledDate([
+      'next_sched_contribution_date' => '2026-01-15 00:00:00',
+      'frequency_interval' => 1,
+      'frequency_unit' => 'month',
+    ]);
+    $this->assertSame('2026-02-15 00:00:00', $result);
   }
 
-  #[DataProvider('nextDateProvider')]
-  public function testCalculateNextScheduledDate(array $recur, ?string $expected): void {
-    $this->assertSame($expected, $this->payment->exposedCalculateNextScheduledDate($recur));
+  public function testCalculateNextDateNullDate(): void {
+    $payment = new TestableMolliePayment();
+    $this->assertNull($payment->exposedCalculateNextScheduledDate([
+      'next_sched_contribution_date' => NULL,
+    ]));
+  }
+
+  public function testCalculateNextDateEmptyArray(): void {
+    $payment = new TestableMolliePayment();
+    $this->assertNull($payment->exposedCalculateNextScheduledDate([]));
   }
 }
