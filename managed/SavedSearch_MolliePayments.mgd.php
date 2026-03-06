@@ -32,6 +32,7 @@ return [
             'receive_date' => 'DESC',
           ],
           'where' => [
+            ['ft.payment_processor_id.payment_processor_type_id:name', '=', 'mollie'],
             ['OR', [['is_test', '=', 0], ['is_test', '=', 1]]],
           ],
           'groupBy' => ['id'],
@@ -41,17 +42,6 @@ return [
               'INNER',
               'EntityFinancialTrxn',
               ['ft.payment_processor_id', 'IS NOT NULL'],
-            ],
-            [
-              'PaymentProcessor AS pp',
-              'INNER',
-              ['ft.payment_processor_id', '=', 'pp.id'],
-            ],
-            [
-              'PaymentProcessorType AS ppt',
-              'INNER',
-              ['pp.payment_processor_type_id', '=', 'ppt.id'],
-              ['ppt.name', '=', '"mollie"'],
             ],
           ],
           'having' => [],
