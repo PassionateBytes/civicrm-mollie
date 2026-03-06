@@ -8,4 +8,5 @@ $baseDir = dirname($vendorDir);
 return array(
     'Mollie\\Api\\' => array($vendorDir . '/mollie/mollie-api-php/src'),
     'Composer\\CaBundle\\' => array($vendorDir . '/composer/ca-bundle/src'),
+    'Civi\\' => array($baseDir . '/Civi'),
 );

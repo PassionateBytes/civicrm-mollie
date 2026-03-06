@@ -3,7 +3,7 @@
         'name' => 'stichtinggast/civicrm-mollie',
         'pretty_version' => 'dev-main',
         'version' => 'dev-main',
-        'reference' => '1e0e3b814396b2ca609e2108d81f1832171f9fb2',
+        'reference' => 'd18bda0125ca752ca3bb50877706f07fc445c02c',
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -31,7 +31,7 @@
         'stichtinggast/civicrm-mollie' => array(
             'pretty_version' => 'dev-main',
             'version' => 'dev-main',
-            'reference' => '1e0e3b814396b2ca609e2108d81f1832171f9fb2',
+            'reference' => 'd18bda0125ca752ca3bb50877706f07fc445c02c',
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),
