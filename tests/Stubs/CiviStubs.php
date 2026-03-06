@@ -38,6 +38,13 @@ namespace {
         public function warning(string $message, array $context = []): void {}
         public function info(string $message, array $context = []): void {}
         public function error(string $message, array $context = []): void {}
+        public function debug(string $message, array $context = []): void {}
+      };
+    }
+
+    public static function settings(): object {
+      return new class {
+        public function get(string $name): mixed { return NULL; }
       };
     }
   }
