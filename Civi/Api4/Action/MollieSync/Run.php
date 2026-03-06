@@ -7,6 +7,7 @@ use Civi\Api4\Generic\AbstractAction;
 use Civi\Api4\Generic\Result;
 use Civi\Api4\MollieCustomer;
 use Civi\Payment\System;
+use Mollie\Api\Exceptions\ApiException;
 use Mollie\Api\Resources\Subscription;
 
 /**
@@ -80,7 +81,9 @@ class Run extends AbstractAction {
         }
 
         $client = self::getClientForProcessor($recur['payment_processor_id']);
-        $subscription = $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']);
+        $subscription = self::throttledApiCall(
+          fn() => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id'])
+        );
 
         $updates = $this->buildUpdatesFromSubscription($subscription, $recur);
         if (empty($updates)) {
@@ -206,13 +209,17 @@ class Run extends AbstractAction {
         }
 
         $client = self::getClientForProcessor($recur['payment_processor_id']);
-        $subscription = $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']);
+        $subscription = self::throttledApiCall(
+          fn() => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id'])
+        );
 
         if (!in_array($subscription->status, ['active', 'pending'], TRUE)) {
           continue;
         }
 
-        $client->subscriptions->cancelForId($mollieCustomerId, $recur['processor_id']);
+        self::throttledApiCall(
+          fn() => $client->subscriptions->cancelForId($mollieCustomerId, $recur['processor_id'])
+        );
         $stats['cancellations_retried']++;
 
         \Civi::log('mollie')->info('Sync: retried cancellation on Mollie', [
@@ -282,6 +289,63 @@ class Run extends AbstractAction {
     $client->setApiKey($apiKey);
 
     return $client;
+  }
+
+  /**
+   * Execute a Mollie API call with 429 rate limit handling.
+   *
+   * Retries with backoff if Mollie returns HTTP 429, using the Retry-After
+   * header when available.
+   *
+   * @param callable $apiCall
+   *
+   * @return mixed
+   *   The return value of the API call.
+   *
+   * @throws ApiException
+   *   Re-thrown after max retries exhausted.
+   */
+  protected static function throttledApiCall(callable $apiCall): mixed {
+    $maxRetries = 3;
+    for ($attempt = 0; $attempt <= $maxRetries; $attempt++) {
+      try {
+        return $apiCall();
+      }
+      catch (ApiException $e) {
+        if ($e->getCode() !== 429 || $attempt >= $maxRetries) {
+          throw $e;
+        }
+
+        $retryAfter = self::getRetryAfterSeconds($e);
+        \Civi::log('mollie')->warning('Sync: rate limited by Mollie, retrying', [
+          'attempt' => $attempt + 1,
+          'retry_after_seconds' => $retryAfter,
+        ]);
+        sleep($retryAfter);
+      }
+    }
+
+    // Unreachable, but satisfies static analysis.
+    throw new \RuntimeException('Exhausted retries');
+  }
+
+  /**
+   * Extract Retry-After seconds from a 429 response, with fallback.
+   *
+   * @param ApiException $e
+   *
+   * @return int
+   */
+  protected static function getRetryAfterSeconds(ApiException $e): int {
+    $response = $e->getResponse();
+    if ($response !== NULL && $response->hasHeader('Retry-After')) {
+      $value = (int) $response->getHeader('Retry-After')[0];
+      if ($value > 0 && $value <= 60) {
+        return $value;
+      }
+    }
+
+    return 5;
   }
 
 }
