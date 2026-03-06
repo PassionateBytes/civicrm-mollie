@@ -32,11 +32,18 @@ return [
             'receive_date' => 'DESC',
           ],
           'where' => [
-            ['trxn_id', 'LIKE', 'tr_%'],
+            ['ft.payment_processor_id.payment_processor_type_id:name', '=', 'mollie'],
             ['OR', [['is_test', '=', 0], ['is_test', '=', 1]]],
           ],
-          'groupBy' => [],
-          'join' => [],
+          'groupBy' => ['id'],
+          'join' => [
+            [
+              'FinancialTrxn AS ft',
+              'INNER',
+              'EntityFinancialTrxn',
+              ['ft.payment_processor_id', 'IS NOT NULL'],
+            ],
+          ],
           'having' => [],
         ],
       ],

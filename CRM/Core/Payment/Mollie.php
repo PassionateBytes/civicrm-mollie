@@ -527,6 +527,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     $params = [
       'id' => $contribution['id'],
       'trxn_id' => $molliePayment->id,
+      'payment_processor_id' => $this->_paymentProcessor['id'],
       'is_email_receipt' => $contribution['is_email_receipt'] ?? FALSE,
     ];
 
@@ -885,6 +886,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     $params = [
       'contribution_recur_id' => $contributionRecur['id'],
       'trxn_id' => $molliePayment->id,
+      'payment_processor_id' => $contributionRecur['payment_processor_id'],
       'contribution_status_id' => 'Completed',
       'receive_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
       'total_amount' => (float) $molliePayment->amount->value,
@@ -934,6 +936,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       civicrm_api3('Contribution', 'repeattransaction', [
         'contribution_recur_id' => $contributionRecur['id'],
         'trxn_id' => $molliePayment->id,
+        'payment_processor_id' => $contributionRecur['payment_processor_id'],
         'contribution_status_id' => 'Failed',
         'receive_date' => date('Y-m-d H:i:s'),
         'total_amount' => (float) $molliePayment->amount->value,
