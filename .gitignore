@@ -4,3 +4,9 @@ composer.lock
 *.swp
 *.swo
 *~
+
+# Ignore all of vendor/ except bundled production dependencies
+vendor/*
+!vendor/autoload.php
+!vendor/composer/
+!vendor/mollie/
