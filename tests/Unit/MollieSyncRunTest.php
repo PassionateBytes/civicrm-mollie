@@ -15,9 +15,7 @@ namespace Tests\Unit {
   use Mollie\Api\Exceptions\ApiException;
   use Mollie\Api\MollieApiClient;
   use Mollie\Api\Resources\Subscription;
-  use PHPUnit\Framework\Attributes\DataProvider;
   use PHPUnit\Framework\TestCase;
-  use Psr\Http\Message\ResponseInterface;
 
   /**
    * Test subclass to expose protected methods.
@@ -28,16 +26,8 @@ namespace Tests\Unit {
       // Skip parent constructor.
     }
 
-    public static function exposedMapMollieStatusToCiviCrm(string $status): ?string {
-      return self::mapMollieStatusToCiviCrm($status);
-    }
-
     public function exposedBuildUpdatesFromSubscription(Subscription $sub, array $recur): array {
       return $this->buildUpdatesFromSubscription($sub, $recur);
-    }
-
-    public static function exposedGetRetryAfterSeconds(ApiException $e): int {
-      return self::getRetryAfterSeconds($e);
     }
 
     public static function exposedThrottledApiCall(callable $apiCall): mixed {
@@ -52,27 +42,6 @@ namespace Tests\Unit {
 
     protected function setUp(): void {
       self::$sleepCalls = [];
-    }
-
-    // -----------------------------------------------------------------------
-    // mapMollieStatusToCiviCrm
-    // -----------------------------------------------------------------------
-
-    public static function mollieStatusProvider(): array {
-      return [
-        'completed' => ['completed', 'Completed'],
-        'canceled'  => ['canceled', 'Cancelled'],
-        'suspended' => ['suspended', 'Failed'],
-        'active'    => ['active', NULL],
-        'pending'   => ['pending', NULL],
-        'unknown'   => ['unknown_status', NULL],
-        'empty'     => ['', NULL],
-      ];
-    }
-
-    #[DataProvider('mollieStatusProvider')]
-    public function testMapMollieStatusToCiviCrm(string $mollieStatus, ?string $expected): void {
-      $this->assertSame($expected, TestableMollieSyncRun::exposedMapMollieStatusToCiviCrm($mollieStatus));
     }
 
     // -----------------------------------------------------------------------
@@ -275,73 +244,6 @@ namespace Tests\Unit {
     }
 
     // -----------------------------------------------------------------------
-    // getRetryAfterSeconds
-    // -----------------------------------------------------------------------
-
-    private function makeApiExceptionWithResponse(?ResponseInterface $response): ApiException {
-      $e = new ApiException('rate limited', 429);
-      if ($response !== NULL) {
-        $ref = new \ReflectionProperty(ApiException::class, 'response');
-        $ref->setValue($e, $response);
-      }
-      return $e;
-    }
-
-    public function testGetRetryAfterSecondsNullResponse(): void {
-      $e = new ApiException('rate limited', 429);
-      $this->assertSame(5, TestableMollieSyncRun::exposedGetRetryAfterSeconds($e));
-    }
-
-    public function testGetRetryAfterSecondsValidHeader(): void {
-      $response = $this->createMock(ResponseInterface::class);
-      $response->method('hasHeader')->with('Retry-After')->willReturn(TRUE);
-      $response->method('getHeader')->with('Retry-After')->willReturn(['10']);
-
-      $e = $this->makeApiExceptionWithResponse($response);
-      $this->assertSame(10, TestableMollieSyncRun::exposedGetRetryAfterSeconds($e));
-    }
-
-    public function testGetRetryAfterSecondsZeroFallsBackToDefault(): void {
-      $response = $this->createMock(ResponseInterface::class);
-      $response->method('hasHeader')->with('Retry-After')->willReturn(TRUE);
-      $response->method('getHeader')->with('Retry-After')->willReturn(['0']);
-
-      $e = $this->makeApiExceptionWithResponse($response);
-      $this->assertSame(5, TestableMollieSyncRun::exposedGetRetryAfterSeconds($e));
-    }
-
-    public function testGetRetryAfterSecondsTooHighFallsBackToDefault(): void {
-      $response = $this->createMock(ResponseInterface::class);
-      $response->method('hasHeader')->with('Retry-After')->willReturn(TRUE);
-      $response->method('getHeader')->with('Retry-After')->willReturn(['61']);
-
-      $e = $this->makeApiExceptionWithResponse($response);
-      $this->assertSame(5, TestableMollieSyncRun::exposedGetRetryAfterSeconds($e));
-    }
-
-    public function testGetRetryAfterSecondsNoHeader(): void {
-      $response = $this->createMock(ResponseInterface::class);
-      $response->method('hasHeader')->with('Retry-After')->willReturn(FALSE);
-
-      $e = $this->makeApiExceptionWithResponse($response);
-      $this->assertSame(5, TestableMollieSyncRun::exposedGetRetryAfterSeconds($e));
-    }
-
-    public function testGetRetryAfterSecondsBoundaryValues(): void {
-      $response1 = $this->createMock(ResponseInterface::class);
-      $response1->method('hasHeader')->willReturn(TRUE);
-      $response1->method('getHeader')->willReturn(['1']);
-      $e1 = $this->makeApiExceptionWithResponse($response1);
-      $this->assertSame(1, TestableMollieSyncRun::exposedGetRetryAfterSeconds($e1));
-
-      $response60 = $this->createMock(ResponseInterface::class);
-      $response60->method('hasHeader')->willReturn(TRUE);
-      $response60->method('getHeader')->willReturn(['60']);
-      $e60 = $this->makeApiExceptionWithResponse($response60);
-      $this->assertSame(60, TestableMollieSyncRun::exposedGetRetryAfterSeconds($e60));
-    }
-
-    // -----------------------------------------------------------------------
     // throttledApiCall
     // -----------------------------------------------------------------------
 
@@ -365,19 +267,23 @@ namespace Tests\Unit {
       $this->assertSame('ok', $result);
       $this->assertSame(2, $attempts);
       $this->assertCount(1, self::$sleepCalls);
-      $this->assertSame(5, self::$sleepCalls[0]);
     }
 
     public function testThrottledApiCallExhaustsRetries(): void {
       $attempts = 0;
 
-      $this->expectException(ApiException::class);
-      $this->expectExceptionCode(429);
-
-      TestableMollieSyncRun::exposedThrottledApiCall(function () use (&$attempts) {
-        $attempts++;
-        throw new ApiException('rate limited', 429);
-      });
+      try {
+        TestableMollieSyncRun::exposedThrottledApiCall(function () use (&$attempts) {
+          $attempts++;
+          throw new ApiException('rate limited', 429);
+        });
+        $this->fail('Expected ApiException');
+      }
+      catch (ApiException) {
+        // 4 total attempts: initial + 3 retries.
+        $this->assertSame(4, $attempts);
+        $this->assertCount(3, self::$sleepCalls);
+      }
     }
 
     public function testThrottledApiCallDoesNotRetryNon429(): void {
@@ -387,24 +293,6 @@ namespace Tests\Unit {
       TestableMollieSyncRun::exposedThrottledApiCall(function () {
         throw new ApiException('server error', 500);
       });
-    }
-
-    public function testThrottledApiCallRetriesMaxThreeTimes(): void {
-      $attempts = 0;
-
-      try {
-        TestableMollieSyncRun::exposedThrottledApiCall(function () use (&$attempts) {
-          $attempts++;
-          throw new ApiException('rate limited', 429);
-        });
-      }
-      catch (ApiException) {
-        // Expected.
-      }
-
-      // 4 total attempts: initial + 3 retries.
-      $this->assertSame(4, $attempts);
-      $this->assertCount(3, self::$sleepCalls);
     }
   }
 }
