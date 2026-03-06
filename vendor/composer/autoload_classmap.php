@@ -6,5 +6,10 @@ $vendorDir = dirname(__DIR__);
 $baseDir = dirname($vendorDir);
 
 return array(
+    'CRM_Core_Payment_Mollie' => $baseDir . '/CRM/Core/Payment/Mollie.php',
+    'CRM_Mollie_DAO_MollieCustomer' => $baseDir . '/CRM/Mollie/DAO/MollieCustomer.php',
+    'CRM_Mollie_Form_Settings' => $baseDir . '/CRM/Mollie/Form/Settings.php',
+    'CRM_Mollie_Upgrader' => $baseDir . '/CRM/Mollie/Upgrader.php',
+    'CRM_Mollie_WorkflowMessage_RecurringReminder' => $baseDir . '/CRM/Mollie/WorkflowMessage/RecurringReminder.php',
     'Composer\\InstalledVersions' => $vendorDir . '/composer/InstalledVersions.php',
 );
