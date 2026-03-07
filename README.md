@@ -1,92 +1,168 @@
 # Mollie Payment Processor for CiviCRM
 
-A CiviCRM extension (`nl.stichtinggast.mollie`) for processing one-off and recurring donations through [Mollie](https://mollie.com). Built for [Stichting GAST](https://www.stichtinggast.nl), a volunteer-run NGO in Nijmegen, Netherlands.
+A CiviCRM extension for processing one-off and recurring contributions through [Mollie](https://mollie.com). Built for [Stichting GAST](https://www.stichtinggast.nl), a volunteer-run NGO in Nijmegen, Netherlands.
+
+**Extension key**: `nl.stichtinggast.mollie`
 
 ## Requirements
 
 - CiviCRM >= 6.0
 - PHP >= 8.1
-- A Mollie account with API keys
+- A [Mollie](https://mollie.com) account with API keys
+- A [cron job](https://docs.civicrm.org/sysadmin/en/latest/setup/jobs/) configured for CiviCRM scheduled jobs
+- For recurring contributions via iDEAL: SEPA Direct Debit must be enabled in your Mollie account
 
 ## Features
 
-- **One-off payments** via Mollie's hosted checkout (redirect-based)
-- **Recurring donations** via Mollie Customers, Mandates, and Subscriptions APIs
-- **Webhook-driven** status synchronization — payment state is always verified against Mollie's API
-- **Mollie-managed recurring** — Mollie handles scheduling, retries, and charging
-- **Pre-payment reminders** — configurable email notifications before upcoming recurring charges
-- **Admin dashboard** — SearchKit-based overview of payments, subscriptions, and customers
-- **Daily sync job** — catches subscription status changes that webhooks may miss
+- **One-off contributions** — redirect-based payments via Mollie's hosted checkout
+- **Recurring contributions** — automatic scheduling and charging via Mollie's Subscriptions API
+- **Webhook-driven status updates** — payment state is always verified against Mollie's API, never based on redirect returns
+- **Pre-payment reminders** — optional email notifications before upcoming recurring charges
+- **Admin dashboard** — SearchKit-based overviews of payments, subscriptions, and customers
+- **Daily sync job** — fallback to keep CiviCRM in sync with Mollie when webhooks don't reach CiviCRM (e.g., server downtime, network issues)
+- **Recurring lifecycle management** — cancel subscriptions and change amounts from within CiviCRM
 - **Test mode** — full support for Mollie test API keys
+
+### Supported Payment Methods
+
+Any payment method enabled in your Mollie account can be used for one-off contributions.
+
+For recurring contributions, only methods that support mandates are applicable:
+
+- iDEAL (creates a SEPA Direct Debit mandate)
+- Credit Card
+- PayPal
+- Bancontact, KBC/CBC, Belfius (create SEPA DD mandates)
+
+### Supported Frequencies
+
+| Frequency | Mollie Interval |
+|-----------|-----------------|
+| Every N days | `N days` |
+| Every N weeks | `N weeks` |
+| Every N months | `N months` |
+| Yearly | `12 months` |
 
 ## Installation
 
 1. Copy or clone this extension into your CiviCRM extensions directory.
-2. Run `composer install` in the extension directory to install the Mollie PHP SDK.
-3. Enable the extension in CiviCRM (**Administer > System Settings > Extensions**).
-4. Configure a Mollie payment processor instance (**Administer > CiviContribute > Payment Processors**) with your Mollie API key.
+2. Enable the extension via **Administer > System Settings > Extensions**.
 
 ## Configuration
+
+### Payment Processor Setup
+
+1. Go to **Administer > CiviContribute > Payment Processors**.
+2. Click **Add Payment Processor** and select **Mollie** as the processor type.
+3. Enter your Mollie API keys:
+   - **Live API Key** — your Mollie live key (starts with `live_`)
+   - **Test API Key** — your Mollie test key (starts with `test_`)
+4. Save the payment processor.
+
+CiviCRM's built-in test/live mode toggle determines which key is used at runtime.
+
+### Extension Settings
 
 Extension settings are available at **Administer > CiviContribute > Mollie Settings** (`civicrm/admin/mollie/settings`):
 
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Payment Description | `Donation #{contribution.id}` | Template for bank statement descriptions |
-| Enable Pre-Payment Reminders | Off | Send emails before recurring charges |
+| Enable Pre-Payment Reminders | Off | Send email reminders before recurring charges |
 | Reminder Days Before Charge | 7 | How many days before the charge to send the reminder |
 | Enable Debug Logging | Off | Verbose Mollie API logging (disable in production) |
 
-## Permission Model
+### Contribution Pages
 
-This extension uses standard CiviCRM permissions — no custom permissions are defined. The table below shows which permissions are required for each component.
+Once the payment processor is configured, assign it to your contribution pages under **Manage Contribution Pages > Amounts Tab**. Enable the "Recurring contributions" option on the page if you want to accept recurring contributions.
 
-### Admin UI
+## How It Works
 
-| Component | Permission | Where Enforced |
-|-----------|------------|----------------|
-| Payment Dashboard (`civicrm/admin/mollie`) | `access CiviContribute` | Afform, Navigation |
-| Settings Form (`civicrm/admin/mollie/settings`) | `administer payment processors` | Menu XML, Navigation |
+### One-Off Contributions
 
-### MollieCustomer API (APIv4)
+1. Contact fills out a CiviCRM contribution page and submits.
+2. The contact is redirected to Mollie's hosted payment page.
+3. After completing (or cancelling) the payment, the contact returns to CiviCRM.
+4. Mollie sends a webhook to CiviCRM with the payment result — this is what actually updates the contribution status, not the redirect.
 
-| Action | Permission |
-|--------|------------|
-| `get` | `access CiviContribute` |
-| `meta` | `access CiviCRM` |
-| `create`, `update`, `delete` | `administer payment processors` |
+### Recurring Contributions
 
-### MollieCustomer Entity (Schema-Level)
+1. Contact selects a recurring option on the contribution page and completes the first payment on Mollie.
+2. The first payment establishes a mandate (authorization for future charges).
+3. Once the first payment succeeds, a Mollie subscription is automatically created.
+4. Mollie handles all subsequent charges on schedule — CiviCRM does not trigger them.
+5. Each charge triggers a webhook that creates a new contribution in CiviCRM.
 
-Access requires either `access CiviContribute` **or** `administer CiviCRM`.
+### Pre-Payment Reminders
 
-### Search Displays
+When enabled, a daily scheduled job checks for upcoming recurring charges and sends reminder emails to contacts within the configured window (default: 7 days before). The email template can be customized via **Mailings > Message Templates > System Workflow Messages** (look for "Mollie Recurring Reminder").
 
-All three search displays (Payments, Subscriptions, Customers) have `acl_bypass` set to `FALSE` — they respect CiviCRM's standard contact and contribution ACLs.
+## Admin Dashboard
 
-### Webhook Endpoint
+An admin dashboard is available at **Administer > CiviContribute > Mollie Payment Dashboard** (`civicrm/admin/mollie`) with three views:
 
-The webhook endpoint (`civicrm/payment/ipn/mollie`) is unauthenticated by design. Mollie sends payment IDs via server-to-server POST; the handler always verifies payment status by fetching the full payment object from Mollie's API.
+- **Payments** — all Mollie-processed contributions with payment ID, method, status, and fees
+- **Subscriptions** — active recurring contributions with Mollie subscription status, next charge date, and mandate type
+- **Customers** — Mollie customer mappings to CiviCRM contacts
 
-### Scheduled Jobs
+## Scheduled Jobs
 
-The two scheduled jobs (`MollieSync` and `MollieRecurringReminder`) run under CiviCRM's system job runner with no additional permission requirements.
+The extension registers two scheduled jobs that run daily. Verify they are enabled under **Administer > System Settings > Scheduled Jobs**.
 
-## Architecture
+### MollieSync
 
-See [REQUIREMENTS.md](REQUIREMENTS.md) for the full requirements and architecture document.
+Fallback sync that fetches subscription and contribution statuses from Mollie to keep CiviCRM up to date when webhooks fail to arrive (e.g., due to server downtime or network issues). Specifically, it:
 
-### Key Design Decisions
+- Checks all active/pending recurring contributions with a Mollie subscription
+- Syncs status, next charge date, and amount from Mollie into CiviCRM (Mollie is the source of truth)
+- Detects completed, cancelled, and suspended subscriptions and updates the recurring contribution accordingly
+- Retries cancellations that were made in CiviCRM but failed to reach Mollie (e.g., due to a network error at the time)
 
-- **Mollie PHP SDK directly** — no Omnipay abstraction. Omnipay's token-based recurring model doesn't fit Mollie's Customer/Mandate/Subscription flow.
-- **Mollie-managed recurring** — Mollie's Subscriptions API handles scheduling and charging. CiviCRM does not trigger individual recurring payments.
-- **Single custom entity** (`MollieCustomer`) — maps CiviCRM contacts to Mollie customer IDs. Other Mollie references use standard CiviCRM fields (`ContributionRecur.processor_id`, `PaymentToken`, `Contribution.trxn_id`).
-- **Webhook-driven** — payment status is always determined by Mollie webhook + API verification, never by redirect return.
+### MollieRecurringReminder
+
+Sends pre-payment reminder emails before upcoming recurring charges (only active when enabled in extension settings). Specifically, it:
+
+- Finds recurring contributions with a next charge date within the configured reminder window
+- Sends a reminder email to each contact using the "Mollie Recurring Reminder" workflow message template
+- Records a "Mollie Reminder Sent" activity on the contact to prevent duplicate reminders for the same billing cycle
+
+## Permissions
+
+This extension uses standard CiviCRM permissions — no custom permissions are defined.
+
+| Component | Required Permission |
+|-----------|-------------------|
+| Payment Dashboard | `access CiviContribute` |
+| Extension Settings | `administer payment processors` |
+| MollieCustomer API (read) | `access CiviContribute` |
+| MollieCustomer API (write) | `administer payment processors` |
+
+All search displays respect CiviCRM's standard contact and contribution ACLs.
+
+The webhook endpoint is unauthenticated by design — Mollie calls it server-to-server, and the handler always verifies payment status by fetching the full payment object from Mollie's API.
+
+## Troubleshooting
+
+### Payments stay in "Pending" status
+
+Mollie cannot reach the webhook URL. Verify that your CiviCRM instance is publicly accessible and that no firewall rules block incoming POST requests to the webhook endpoint. The daily MollieSync job will eventually catch up, but webhooks should be the primary mechanism.
+
+### Recurring contributions fail on the second charge
+
+SEPA Direct Debit is likely not enabled in your Mollie account. iDEAL-based recurring contributions use SEPA DD for subsequent charges. Enable it in your Mollie dashboard.
+
+### Debug logging
+
+Enable **Debug Logging** in the extension settings to log detailed Mollie API request/response data. Logs are written to CiviCRM's log system under the `mollie` channel. **Disable this in production** as it produces verbose output.
+
+## Development
+
+See [DEVELOPMENT.md](DEVELOPMENT.md) for architecture details, design decisions, and developer workflow.
 
 ## License
 
-AGPL-3.0 — see [LICENSE](http://www.gnu.org/licenses/agpl-3.0.html).
+AGPL-3.0 — see [LICENSE](LICENSE).
 
-## Maintainer
+## Credits
 
-Stichting GAST — [ict@stichtinggast.nl](mailto:ict@stichtinggast.nl)
+Developed by **Paul Bütof** ([Passionate Bytes Solutions](https://www.passionate-bytes.com)) for **Stichting GAST** ([stichtinggast.nl](https://www.stichtinggast.nl)).
