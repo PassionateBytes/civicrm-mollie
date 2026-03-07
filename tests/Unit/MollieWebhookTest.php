@@ -85,6 +85,10 @@ class WebhookTestableMolliePayment extends \CRM_Core_Payment_Mollie {
   protected function recordFailedRecurringInstallment(array $contributionRecur, Payment $molliePayment): void {
     $this->calledMethods[] = 'recordFailedRecurringInstallment';
   }
+
+  protected function recordUnmatchedWebhookActivity(Payment $molliePayment, string $reason): void {
+    $this->calledMethods[] = 'recordUnmatchedWebhookActivity';
+  }
 }
 
 class MollieWebhookTest extends TestCase {
@@ -290,7 +294,17 @@ class MollieWebhookTest extends TestCase {
     ]);
     $processor->exposedProcessRecurringPaymentWebhook($payment);
 
-    $this->assertSame([], $processor->calledMethods);
+    $this->assertSame(['recordUnmatchedWebhookActivity'], $processor->calledMethods);
+  }
+
+  public function testOneOffUnknownContributionRecordsActivity(): void {
+    $processor = new WebhookTestableMolliePayment();
+    $processor->stubbedContribution = NULL; // Unknown contribution.
+
+    $payment = $this->makePayment(['status' => 'paid']);
+    $processor->exposedProcessOneOffOrFirstPaymentWebhook($payment);
+
+    $this->assertSame(['recordUnmatchedWebhookActivity'], $processor->calledMethods);
   }
 
   // -----------------------------------------------------------------------
