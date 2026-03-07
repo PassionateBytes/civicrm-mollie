@@ -36,7 +36,7 @@ return [
         'api_action' => 'run',
         'parameters' => 'version=4',
         'run_frequency' => 'Daily',
-        'is_active' => FALSE,
+        'is_active' => TRUE,
       ],
       'match' => ['name'],
     ],
