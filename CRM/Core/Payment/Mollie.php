@@ -933,14 +933,21 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    */
   protected function recordFailedRecurringInstallment(array $contributionRecur, \Mollie\Api\Resources\Payment $molliePayment): void {
     try {
-      civicrm_api3('Contribution', 'repeattransaction', [
+      // repeattransaction creates contributions in Pending status and only
+      // transitions to Completed via completeOrder(). For failed payments we
+      // create as Pending, then use failContribution() to set the correct status.
+      $result = civicrm_api3('Contribution', 'repeattransaction', [
         'contribution_recur_id' => $contributionRecur['id'],
         'trxn_id' => $molliePayment->id,
         'payment_processor_id' => $contributionRecur['payment_processor_id'],
-        'contribution_status_id' => 'Failed',
         'receive_date' => date('Y-m-d H:i:s'),
         'total_amount' => (float) $molliePayment->amount->value,
       ]);
+
+      $contributionId = $result['id'] ?? NULL;
+      if ($contributionId) {
+        $this->failContribution(['id' => $contributionId], $molliePayment);
+      }
 
       \Civi\Api4\ContributionRecur::update(FALSE)
         ->addWhere('id', '=', $contributionRecur['id'])
