@@ -520,15 +520,21 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   /**
    * Complete a contribution after a successful Mollie payment.
    *
+   * Uses Payment.create to record the payment against the pending contribution.
+   * This handles financial bookkeeping (FinancialTrxn, FinancialItem) and
+   * transitions the contribution to Completed via completeOrder().
+   *
    * @param array $contribution
    * @param \Mollie\Api\Resources\Payment $molliePayment
    */
   protected function completeContribution(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
     $params = [
-      'id' => $contribution['id'],
+      'contribution_id' => $contribution['id'],
+      'total_amount' => $molliePayment->amount->value,
       'trxn_id' => $molliePayment->id,
+      'trxn_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
       'payment_processor_id' => $this->_paymentProcessor['id'],
-      'is_email_receipt' => $contribution['is_email_receipt'] ?? FALSE,
+      'is_send_contribution_notification' => $contribution['is_email_receipt'] ?? FALSE,
     ];
 
     if ($molliePayment->settlementAmount !== NULL) {
@@ -539,7 +545,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     }
 
     try {
-      civicrm_api3('Contribution', 'completetransaction', $params);
+      civicrm_api3('Payment', 'create', $params);
 
       $this->logInfo('Contribution completed', [
         'contribution_id' => $contribution['id'],
