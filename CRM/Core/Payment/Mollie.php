@@ -1141,9 +1141,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   /**
    * Find a ContributionRecur by its Mollie subscription ID (processor_id).
    *
-   * Scoped to the Mollie payment processor type to avoid false matches
-   * with other processors that also use the processor_id field.
-   *
    * @param string $subscriptionId
    *
    * @return array|null
@@ -1152,10 +1149,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     $results = \Civi\Api4\ContributionRecur::get(FALSE)
       ->addSelect('*')
       ->addWhere('processor_id', '=', $subscriptionId)
-      ->addJoin('PaymentProcessorType AS ppt', 'INNER',
-        ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
-        ['ppt.name', '=', '"mollie"']
-      )
       ->setLimit(1)
       ->execute();
 
