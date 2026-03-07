@@ -24,7 +24,7 @@ class Run extends AbstractAction {
     $stats = ['checked' => 0, 'sent' => 0, 'skipped' => 0, 'errors' => 0];
 
     if (!\Civi::settings()->get('mollie_reminder_enabled')) {
-      \Civi::log('mollie')->info('MollieRecurringReminder: reminders disabled, skipping');
+      \CRM_Mollie_Log::info('MollieRecurringReminder: reminders disabled, skipping');
       $result[] = $stats;
       return;
     }
@@ -65,7 +65,7 @@ class Run extends AbstractAction {
           ->first();
 
         if (empty($contact['email_primary.email'])) {
-          \Civi::log('mollie')->warning('Reminder: contact has no email', [
+          \CRM_Mollie_Log::warning('Reminder: contact has no email', [
             'contact_id' => $recur['contact_id'],
             'contribution_recur_id' => $recur['id'],
           ]);
@@ -80,14 +80,14 @@ class Run extends AbstractAction {
       }
       catch (\Exception $e) {
         $stats['errors']++;
-        \Civi::log('mollie')->error('Reminder: failed to send', [
+        \CRM_Mollie_Log::error('Reminder: failed to send', [
           'contribution_recur_id' => $recur['id'],
           'error' => $e->getMessage(),
         ]);
       }
     }
 
-    \Civi::log('mollie')->info('MollieRecurringReminder completed', $stats);
+    \CRM_Mollie_Log::info('MollieRecurringReminder completed', $stats);
 
     $result[] = $stats;
   }
@@ -116,7 +116,7 @@ class Run extends AbstractAction {
       throw new \RuntimeException('Failed to send reminder email: ' . ($errorMsg ?? 'unknown error'));
     }
 
-    \Civi::log('mollie')->info('Reminder sent', [
+    \CRM_Mollie_Log::info('Reminder sent', [
       'contribution_recur_id' => $recur['id'],
       'contact_id' => $recur['contact_id'],
       'next_charge_date' => $recur['next_sched_contribution_date'],

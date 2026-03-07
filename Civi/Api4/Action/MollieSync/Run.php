@@ -41,7 +41,7 @@ class Run extends AbstractAction {
     $this->syncFromMollie($stats);
     $this->retryCancellations($stats);
 
-    \Civi::log('mollie')->info('MollieSync completed', $stats);
+    \CRM_Mollie_Log::info('MollieSync completed', $stats);
 
     $result[] = $stats;
   }
@@ -74,7 +74,7 @@ class Run extends AbstractAction {
       try {
         $mollieCustomerId = self::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
         if ($mollieCustomerId === NULL) {
-          \Civi::log('mollie')->warning('Sync: no Mollie customer for ContributionRecur', [
+          \CRM_Mollie_Log::warning('Sync: no Mollie customer for ContributionRecur', [
             'contribution_recur_id' => $recur['id'],
           ]);
           continue;
@@ -108,7 +108,7 @@ class Run extends AbstractAction {
           };
         }
 
-        \Civi::log('mollie')->info('Sync: updated ContributionRecur from Mollie', [
+        \CRM_Mollie_Log::info('Sync: updated ContributionRecur from Mollie', [
           'contribution_recur_id' => $recur['id'],
           'subscription_id' => $recur['processor_id'],
           'updates' => $updates,
@@ -116,7 +116,7 @@ class Run extends AbstractAction {
       }
       catch (\Exception $e) {
         $stats['errors']++;
-        \Civi::log('mollie')->error('Sync: failed to check subscription', [
+        \CRM_Mollie_Log::error('Sync: failed to check subscription', [
           'contribution_recur_id' => $recur['id'],
           'error' => $e->getMessage(),
         ]);
@@ -222,14 +222,14 @@ class Run extends AbstractAction {
         );
         $stats['cancellations_retried']++;
 
-        \Civi::log('mollie')->info('Sync: retried cancellation on Mollie', [
+        \CRM_Mollie_Log::info('Sync: retried cancellation on Mollie', [
           'contribution_recur_id' => $recur['id'],
           'subscription_id' => $recur['processor_id'],
         ]);
       }
       catch (\Exception $e) {
         $stats['cancellations_failed']++;
-        \Civi::log('mollie')->error('Sync: failed to retry cancellation', [
+        \CRM_Mollie_Log::error('Sync: failed to retry cancellation', [
           'contribution_recur_id' => $recur['id'],
           'error' => $e->getMessage(),
         ]);
@@ -317,7 +317,7 @@ class Run extends AbstractAction {
         }
 
         $retryAfter = self::getRetryAfterSeconds($e);
-        \Civi::log('mollie')->warning('Sync: rate limited by Mollie, retrying', [
+        \CRM_Mollie_Log::warning('Sync: rate limited by Mollie, retrying', [
           'attempt' => $attempt + 1,
           'retry_after_seconds' => $retryAfter,
         ]);

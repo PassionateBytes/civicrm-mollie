@@ -1529,7 +1529,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * @param array $context
    */
   protected function logInfo(string $message, array $context = []): void {
-    \Civi::log('mollie')->info($message, $context);
+    \CRM_Mollie_Log::info($message, $context);
   }
 
   /**
@@ -1539,7 +1539,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * @param array $context
    */
   protected function logWarning(string $message, array $context = []): void {
-    \Civi::log('mollie')->warning($message, $context);
+    \CRM_Mollie_Log::warning($message, $context);
   }
 
   /**
@@ -1549,7 +1549,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * @param array $context
    */
   protected function logError(string $message, array $context = []): void {
-    \Civi::log('mollie')->error($message, $context);
+    \CRM_Mollie_Log::error($message, $context);
   }
 
   /**
@@ -1559,9 +1559,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * @param array $context
    */
   protected function logDebug(string $message, array $context = []): void {
-    if (\Civi::settings()->get('mollie_debug_logging')) {
-      \Civi::log('mollie')->debug($message, $context);
-    }
+    \CRM_Mollie_Log::debug($message, $context);
   }
 
   /**
