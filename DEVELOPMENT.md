@@ -83,8 +83,8 @@ Mollie charges the contact automatically per the subscription schedule using `se
 2. The payment includes `subscriptionId` — this distinguishes it from first/one-off payments
 3. Idempotency check — skip if a Contribution with this `trxn_id` already exists
 4. Look up ContributionRecur by `processor_id` (= Mollie subscription ID)
-5. **If paid**: `Contribution.repeattransaction` (APIv3) creates a new Completed Contribution linked to the recurring series; fee amount recorded from settlement data; `next_sched_contribution_date` updated
-6. **If failed/expired/cancelled**: `Contribution.repeattransaction` creates a Failed Contribution; `failure_count` incremented on ContributionRecur
+5. **If paid**: `Contribution.repeattransaction` (APIv3) creates a new Pending Contribution linked to the recurring series (cloning template data, line items, soft credits); then `Payment.create` records the payment with fee amount from settlement data and transitions to Completed; `next_sched_contribution_date` updated
+6. **If failed/expired/cancelled**: `Contribution.repeattransaction` creates a Pending Contribution, then status is explicitly set to Failed; `failure_count` incremented on ContributionRecur
 
 #### Chargebacks
 
