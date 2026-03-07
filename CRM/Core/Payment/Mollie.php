@@ -520,15 +520,21 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   /**
    * Complete a contribution after a successful Mollie payment.
    *
+   * Uses Payment.create to record the payment against the pending contribution.
+   * This handles financial bookkeeping (FinancialTrxn, FinancialItem) and
+   * transitions the contribution to Completed via completeOrder().
+   *
    * @param array $contribution
    * @param \Mollie\Api\Resources\Payment $molliePayment
    */
   protected function completeContribution(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
     $params = [
-      'id' => $contribution['id'],
+      'contribution_id' => $contribution['id'],
+      'total_amount' => $molliePayment->amount->value,
       'trxn_id' => $molliePayment->id,
+      'trxn_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
       'payment_processor_id' => $this->_paymentProcessor['id'],
-      'is_email_receipt' => $contribution['is_email_receipt'] ?? FALSE,
+      'is_send_contribution_notification' => $contribution['is_email_receipt'] ?? FALSE,
     ];
 
     if ($molliePayment->settlementAmount !== NULL) {
@@ -539,7 +545,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     }
 
     try {
-      civicrm_api3('Contribution', 'completetransaction', $params);
+      civicrm_api3('Payment', 'create', $params);
 
       $this->logInfo('Contribution completed', [
         'contribution_id' => $contribution['id'],
@@ -883,24 +889,41 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * @param \Mollie\Api\Resources\Payment $molliePayment
    */
   protected function createRecurringInstallment(array $contributionRecur, \Mollie\Api\Resources\Payment $molliePayment): void {
-    $params = [
-      'contribution_recur_id' => $contributionRecur['id'],
-      'trxn_id' => $molliePayment->id,
-      'payment_processor_id' => $contributionRecur['payment_processor_id'],
-      'contribution_status_id' => 'Completed',
-      'receive_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
-      'total_amount' => (float) $molliePayment->amount->value,
-    ];
-
+    $feeAmount = NULL;
     if ($molliePayment->settlementAmount !== NULL) {
-      $feeAmount = (float) $molliePayment->amount->value - (float) $molliePayment->settlementAmount->value;
-      if ($feeAmount > 0) {
-        $params['fee_amount'] = number_format($feeAmount, 2, '.', '');
+      $fee = (float) $molliePayment->amount->value - (float) $molliePayment->settlementAmount->value;
+      if ($fee > 0) {
+        $feeAmount = number_format($fee, 2, '.', '');
       }
     }
 
     try {
-      civicrm_api3('Contribution', 'repeattransaction', $params);
+      // Create contribution as Pending via repeattransaction (handles template
+      // cloning, line items, soft credits, custom fields), then record the
+      // payment via Payment.create for proper financial bookkeeping.
+      $result = civicrm_api3('Contribution', 'repeattransaction', [
+        'contribution_recur_id' => $contributionRecur['id'],
+        'trxn_id' => $molliePayment->id,
+        'payment_processor_id' => $contributionRecur['payment_processor_id'],
+        'receive_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
+        'total_amount' => (float) $molliePayment->amount->value,
+      ]);
+
+      $contributionId = $result['id'];
+
+      $paymentParams = [
+        'contribution_id' => $contributionId,
+        'total_amount' => $molliePayment->amount->value,
+        'trxn_id' => $molliePayment->id,
+        'trxn_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
+        'payment_processor_id' => $contributionRecur['payment_processor_id'],
+        'is_send_contribution_notification' => TRUE,
+      ];
+      if ($feeAmount !== NULL) {
+        $paymentParams['fee_amount'] = $feeAmount;
+      }
+
+      civicrm_api3('Payment', 'create', $paymentParams);
 
       $nextDate = $this->calculateNextScheduledDate($contributionRecur);
       if ($nextDate !== NULL) {
