@@ -431,6 +431,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       $this->logWarning('Webhook for unknown contribution', [
         'mollie_payment_id' => $molliePayment->id,
       ]);
+      $this->recordUnmatchedWebhookActivity($molliePayment, E::ts(
+        'No contribution found with trxn_id %1. The contribution may have been deleted or the database restored from a backup.',
+        [1 => $molliePayment->id]
+      ));
       return;
     }
 
@@ -502,6 +506,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'mollie_payment_id' => $molliePayment->id,
         'subscription_id' => $subscriptionId,
       ]);
+      $this->recordUnmatchedWebhookActivity($molliePayment, E::ts(
+        'No recurring contribution found for Mollie subscription %1. The recurring contribution may have been deleted or was never created.',
+        [1 => $subscriptionId]
+      ));
       return;
     }
 
@@ -1306,6 +1314,215 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    */
   protected function isTestMode(): bool {
     return !empty($this->_paymentProcessor['is_test']);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Unmatched webhook handling
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Record an activity for a webhook that could not be matched to CiviCRM records.
+   *
+   * Creates a "Mollie Unmatched Payment" activity with detailed information
+   * from the Mollie payment object so staff can investigate. The activity is
+   * linked to the donor contact if identifiable, otherwise to the domain contact.
+   *
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   * @param string $reason
+   *   Human-readable reason why the webhook could not be matched.
+   */
+  protected function recordUnmatchedWebhookActivity(\Mollie\Api\Resources\Payment $molliePayment, string $reason): void {
+    try {
+      $contactId = $this->resolveContactFromPayment($molliePayment);
+      $domainContactId = \CRM_Core_BAO_Domain::getDomain()->contact_id;
+
+      $sourceContactId = $contactId ?? $domainContactId;
+      $targetContactId = $domainContactId;
+
+      $amount = $molliePayment->amount->value ?? NULL;
+      $currency = $molliePayment->amount->currency ?? NULL;
+      $amountDisplay = ($amount !== NULL && $currency !== NULL)
+        ? "{$currency} {$amount}"
+        : E::ts('unknown');
+
+      $subject = E::ts('Unmatched Mollie payment: %1 (%2, %3)', [
+        1 => $molliePayment->id ?? E::ts('unknown'),
+        2 => $amountDisplay,
+        3 => $molliePayment->status ?? E::ts('unknown'),
+      ]);
+
+      $details = $this->buildUnmatchedPaymentDetails($molliePayment, $reason, $contactId);
+
+      $activityTypeId = $this->getUnmatchedPaymentActivityTypeId();
+
+      $activity = \Civi\Api4\Activity::create(FALSE)
+        ->addValue('activity_type_id', $activityTypeId)
+        ->addValue('source_contact_id', $sourceContactId)
+        ->addValue('target_contact_id', $targetContactId)
+        ->addValue('activity_date_time', date('Y-m-d H:i:s'))
+        ->addValue('subject', $subject)
+        ->addValue('details', $details)
+        ->addValue('status_id:name', 'Completed')
+        ->addValue('priority_id:name', 'Urgent')
+        ->execute();
+
+      $this->logWarning('Unmatched webhook activity created', [
+        'activity_id' => $activity->first()['id'] ?? NULL,
+        'mollie_payment_id' => $molliePayment->id ?? NULL,
+        'reason' => $reason,
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->logError('Failed to create unmatched webhook activity', [
+        'mollie_payment_id' => $molliePayment->id ?? NULL,
+        'error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Attempt to resolve a CiviCRM contact ID from a Mollie payment.
+   *
+   * Tries metadata first, then falls back to MollieCustomer lookup.
+   *
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   *
+   * @return int|null
+   */
+  protected function resolveContactFromPayment(\Mollie\Api\Resources\Payment $molliePayment): ?int {
+    // Try metadata (set during payment creation).
+    $metadata = $molliePayment->metadata ?? NULL;
+    if ($metadata !== NULL) {
+      $contactId = $metadata->civicrm->contact_id ?? NULL;
+      if ($contactId !== NULL) {
+        return (int) $contactId;
+      }
+    }
+
+    // Fall back to MollieCustomer lookup via Mollie customer ID.
+    $customerId = $molliePayment->customerId ?? NULL;
+    if ($customerId !== NULL) {
+      $result = \Civi\Api4\MollieCustomer::get(FALSE)
+        ->addSelect('contact_id')
+        ->addWhere('mollie_customer_id', '=', $customerId)
+        ->setLimit(1)
+        ->execute();
+
+      if ($result->count() > 0) {
+        return (int) $result->first()['contact_id'];
+      }
+    }
+
+    return NULL;
+  }
+
+  /**
+   * Build HTML details for an unmatched payment activity.
+   *
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   * @param string $reason
+   * @param int|null $contactId
+   *
+   * @return string
+   */
+  protected function buildUnmatchedPaymentDetails(\Mollie\Api\Resources\Payment $molliePayment, string $reason, ?int $contactId): string {
+    $paymentId = $molliePayment->id ?? NULL;
+    $status = $molliePayment->status ?? NULL;
+    $amount = $molliePayment->amount->value ?? NULL;
+    $currency = $molliePayment->amount->currency ?? NULL;
+    $method = $molliePayment->method ?? NULL;
+    $customerId = $molliePayment->customerId ?? NULL;
+    $subscriptionId = $molliePayment->subscriptionId ?? NULL;
+    $createdAt = $molliePayment->createdAt ?? NULL;
+    $paidAt = $molliePayment->paidAt ?? NULL;
+    $mode = $molliePayment->mode ?? NULL;
+
+    $metadata = $molliePayment->metadata ?? NULL;
+    $metaContributionId = $metadata->civicrm->contribution_id ?? NULL;
+    $metaContactId = $metadata->civicrm->contact_id ?? NULL;
+    $metaRecurId = $metadata->civicrm->contribution_recur_id ?? NULL;
+
+    $rows = [];
+    $rows[] = $this->detailRow(E::ts('Reason'), '<strong>' . htmlspecialchars($reason) . '</strong>');
+
+    // Mollie payment details.
+    if ($paymentId !== NULL) {
+      $paymentUrl = "https://my.mollie.com/dashboard/payments/{$paymentId}";
+      $rows[] = $this->detailRow(E::ts('Payment ID'), "<a href=\"{$paymentUrl}\" target=\"_blank\">{$paymentId}</a>");
+    }
+    $rows[] = $this->detailRow(E::ts('Status'), $status);
+    if ($amount !== NULL && $currency !== NULL) {
+      $rows[] = $this->detailRow(E::ts('Amount'), "{$currency} {$amount}");
+    }
+    $rows[] = $this->detailRow(E::ts('Payment Method'), $method);
+    $rows[] = $this->detailRow(E::ts('Mode'), $mode);
+
+    if ($customerId !== NULL) {
+      $customerUrl = "https://my.mollie.com/dashboard/customers/{$customerId}";
+      $rows[] = $this->detailRow(E::ts('Mollie Customer'), "<a href=\"{$customerUrl}\" target=\"_blank\">{$customerId}</a>");
+    }
+    $rows[] = $this->detailRow(E::ts('Subscription ID'), $subscriptionId);
+    $rows[] = $this->detailRow(E::ts('Created'), $createdAt);
+    $rows[] = $this->detailRow(E::ts('Paid'), $paidAt);
+
+    // CiviCRM metadata from the payment.
+    if ($metaContributionId !== NULL || $metaContactId !== NULL || $metaRecurId !== NULL) {
+      $rows[] = '<tr><td colspan="2"><strong>' . E::ts('CiviCRM Metadata (from Mollie)') . '</strong></td></tr>';
+      $rows[] = $this->detailRow(E::ts('Contribution ID'), $metaContributionId);
+      $rows[] = $this->detailRow(E::ts('Contact ID'), $metaContactId);
+      $rows[] = $this->detailRow(E::ts('ContributionRecur ID'), $metaRecurId);
+    }
+
+    // Contact resolution.
+    if ($contactId !== NULL) {
+      $rows[] = $this->detailRow(E::ts('Resolved Contact'), $contactId);
+    }
+    else {
+      $rows[] = $this->detailRow(E::ts('Resolved Contact'), '<em>' . E::ts('Could not identify contact') . '</em>');
+    }
+
+    $rowsHtml = implode("\n", array_filter($rows));
+
+    return "<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\">\n{$rowsHtml}\n</table>";
+  }
+
+  /**
+   * Build a single HTML table row, skipping null values.
+   *
+   * @param string $label
+   * @param mixed $value
+   *
+   * @return string|null
+   */
+  protected function detailRow(string $label, mixed $value): ?string {
+    if ($value === NULL) {
+      return NULL;
+    }
+    $safeLabel = htmlspecialchars($label);
+    // Value may contain intentional HTML (links, emphasis).
+    return "<tr><td><strong>{$safeLabel}</strong></td><td>{$value}</td></tr>";
+  }
+
+  /**
+   * Get the activity type ID for "Mollie Unmatched Payment".
+   *
+   * @return int
+   *
+   * @throws \RuntimeException
+   */
+  protected function getUnmatchedPaymentActivityTypeId(): int {
+    $result = \Civi\Api4\OptionValue::get(FALSE)
+      ->addSelect('value')
+      ->addWhere('option_group_id.name', '=', 'activity_type')
+      ->addWhere('name', '=', 'mollie_unmatched_payment')
+      ->setLimit(1)
+      ->execute();
+
+    if ($result->count() === 0) {
+      throw new \RuntimeException('Mollie Unmatched Payment activity type not found. Is the extension installed correctly?');
+    }
+
+    return (int) $result->first()['value'];
   }
 
   // ---------------------------------------------------------------------------

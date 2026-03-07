@@ -21,4 +21,22 @@ return [
       'match' => ['option_group_id', 'name'],
     ],
   ],
+  [
+    'name' => 'activity_type:mollie_unmatched_payment',
+    'entity' => 'OptionValue',
+    'cleanup' => 'always',
+    'update' => 'always',
+    'params' => [
+      'version' => 4,
+      'values' => [
+        'option_group_id.name' => 'activity_type',
+        'name' => 'mollie_unmatched_payment',
+        'label' => E::ts('Mollie Unmatched Payment'),
+        'icon' => 'fa-exclamation-triangle',
+        'is_reserved' => FALSE,
+        'is_active' => TRUE,
+      ],
+      'match' => ['option_group_id', 'name'],
+    ],
+  ],
 ];
