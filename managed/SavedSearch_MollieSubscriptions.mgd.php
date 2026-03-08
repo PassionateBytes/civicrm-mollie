@@ -110,6 +110,19 @@ return [
             ],
             [
               'type' => 'field',
+              'key' => 'processor_id',
+              'label' => E::ts('Subscription ID'),
+              'sortable' => TRUE,
+              'link' => [
+                'path' => 'civicrm/admin/mollie/detail?mollie_id=[processor_id]&cid=[mollie_customer.mollie_customer_id]',
+                'entity' => '',
+                'action' => '',
+                'join' => '',
+                'target' => 'crm-popup',
+              ],
+            ],
+            [
+              'type' => 'field',
               'key' => 'amount',
               'label' => E::ts('Amount'),
               'sortable' => TRUE,
@@ -145,19 +158,6 @@ return [
               'key' => 'contribution_status_id:label',
               'label' => E::ts('Status'),
               'sortable' => TRUE,
-            ],
-            [
-              'type' => 'field',
-              'key' => 'processor_id',
-              'label' => E::ts('Subscription ID'),
-              'sortable' => TRUE,
-              'link' => [
-                'path' => 'https://my.mollie.com/dashboard/customers/[mollie_customer.mollie_customer_id]',
-                'entity' => '',
-                'action' => '',
-                'join' => '',
-                'target' => '_blank',
-              ],
             ],
             [
               'type' => 'field',

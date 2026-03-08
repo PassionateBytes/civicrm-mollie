@@ -92,11 +92,11 @@ return [
               'label' => E::ts('Mollie Customer ID'),
               'sortable' => TRUE,
               'link' => [
-                'path' => 'https://my.mollie.com/dashboard/customers/[mollie_customer_id]',
+                'path' => 'civicrm/admin/mollie/detail?mollie_id=[mollie_customer_id]',
                 'entity' => '',
                 'action' => '',
                 'join' => '',
-                'target' => '_blank',
+                'target' => 'crm-popup',
               ],
             ],
             [

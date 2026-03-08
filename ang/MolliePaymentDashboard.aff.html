@@ -8,20 +8,20 @@
 <af-tabset>
   <af-tab title="Contributions">
     <div af-fieldset="">
-      <p class="help alert-info" style="margin-top: 10px;">One-off and recurring contributions processed through Mollie. Click a payment ID to view it in the Mollie dashboard. Hover over a status to see the cancel reason.</p>
-      <crm-search-display-table search-name="Mollie_Payments" display-name="Mollie_Payments_Table" filters="{is_test: showTest ? '' : false}"></crm-search-display-table>
+      <p class="help alert-info" style="margin-top: 10px;">One-off and recurring contributions processed through Mollie. Click a Mollie ID to view details. Hover over a status to see the cancel reason.</p>
+      <crm-search-display-table search-name="Mollie_Payments" display-name="Mollie_Payments_Table" filters="{is_test: showTest ? true : false}"></crm-search-display-table>
     </div>
   </af-tab>
   <af-tab title="Subscriptions">
     <div af-fieldset="">
       <p class="help alert-info" style="margin-top: 10px;">Recurring donation series managed by Mollie. Mollie automatically charges donors on schedule and notifies CiviCRM via webhook.</p>
-      <crm-search-display-table search-name="Mollie_Subscriptions" display-name="Mollie_Subscriptions_Table" filters="{is_test: showTest ? '' : false}"></crm-search-display-table>
+      <crm-search-display-table search-name="Mollie_Subscriptions" display-name="Mollie_Subscriptions_Table" filters="{is_test: showTest ? true : false}"></crm-search-display-table>
     </div>
   </af-tab>
   <af-tab title="Customers">
     <div af-fieldset="">
       <p class="help alert-info" style="margin-top: 10px;">CiviCRM contacts linked to Mollie customer records. A customer record is created when a contact first makes a recurring donation.</p>
-      <crm-search-display-table search-name="Mollie_Customers" display-name="Mollie_Customers_Table" filters="{'payment_processor_id.is_test': showTest ? '' : false}"></crm-search-display-table>
+      <crm-search-display-table search-name="Mollie_Customers" display-name="Mollie_Customers_Table" filters="{'payment_processor_id.is_test': showTest ? true : false}"></crm-search-display-table>
     </div>
   </af-tab>
 </af-tabset>

@@ -6,4 +6,10 @@
     <title>Mollie Payment Processor Settings</title>
     <access_arguments>administer payment processors</access_arguments>
   </item>
+  <item>
+    <path>civicrm/admin/mollie/detail</path>
+    <page_callback>CRM_Mollie_Page_MollieDetail</page_callback>
+    <title>Mollie Detail</title>
+    <access_arguments>access CiviContribute</access_arguments>
+  </item>
 </menu>

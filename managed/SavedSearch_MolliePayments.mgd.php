@@ -85,6 +85,19 @@ return [
             ],
             [
               'type' => 'field',
+              'key' => 'trxn_id',
+              'label' => E::ts('Mollie Payment ID'),
+              'sortable' => TRUE,
+              'link' => [
+                'path' => 'civicrm/admin/mollie/detail?mollie_id=[trxn_id]',
+                'entity' => '',
+                'action' => '',
+                'join' => '',
+                'target' => 'crm-popup',
+              ],
+            ],
+            [
+              'type' => 'field',
               'key' => 'total_amount',
               'label' => E::ts('Amount'),
               'sortable' => TRUE,
@@ -100,19 +113,6 @@ return [
               'key' => 'receive_date',
               'label' => E::ts('Date'),
               'sortable' => TRUE,
-            ],
-            [
-              'type' => 'field',
-              'key' => 'trxn_id',
-              'label' => E::ts('Mollie Payment ID'),
-              'sortable' => TRUE,
-              'link' => [
-                'path' => 'https://my.mollie.com/dashboard/payments/[trxn_id]',
-                'entity' => '',
-                'action' => '',
-                'join' => '',
-                'target' => '_blank',
-              ],
             ],
             [
               'type' => 'field',
