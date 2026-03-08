@@ -17,7 +17,6 @@ class CRM_Mollie_Page_MollieDetail extends CRM_Core_Page {
   public function run(): void {
     $mollieId = CRM_Utils_Request::retrieve('mollie_id', 'String', $this, TRUE);
     $customerId = CRM_Utils_Request::retrieve('cid', 'String', $this, FALSE, '');
-
     try {
       $query = \Civi\Api4\MollieDetail::get(FALSE)
         ->setMollieId($mollieId);

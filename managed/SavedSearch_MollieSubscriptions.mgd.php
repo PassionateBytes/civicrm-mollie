@@ -197,7 +197,7 @@ return [
               'IN',
               ['Cancelled', 'Failed', 'Completed'],
             ],
-            ['alert-warning', 'is_test', '=', TRUE],
+            ['alert-info font-italic', 'is_test', '=', TRUE],
           ],
           'filters' => [
             ['key' => 'is_test', 'default' => FALSE],

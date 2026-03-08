@@ -24,14 +24,6 @@ class Get extends AbstractAction {
   protected string $mollieId = '';
 
   /**
-   * Whether to use the test mode API key. When not set explicitly,
-   * detected automatically from CiviCRM records.
-   *
-   * @var bool|null
-   */
-  protected ?bool $testMode = NULL;
-
-  /**
    * Mollie customer ID, required for subscription lookups.
    *
    * @var string
@@ -42,20 +34,29 @@ class Get extends AbstractAction {
    * @param Result $result
    */
   public function _run(Result $result): void {
-    $testMode = $this->testMode ?? $this->detectTestMode($this->mollieId);
-    $client = self::getClientForMode($testMode);
+    $type = self::detectType($this->mollieId);
 
-    try {
-      $type = self::detectType($this->mollieId);
-      $resource = match ($type) {
-        'payment' => $client->payments->get($this->mollieId),
-        'subscription' => $client->subscriptions->getForId($this->customerId, $this->mollieId),
-        'customer' => $client->customers->get($this->mollieId),
-        default => throw new \CRM_Core_Exception(E::ts('Unknown Mollie ID format: %1', [1 => $this->mollieId])),
-      };
+    // Try live key first, fall back to test key.
+    $resource = NULL;
+    $lastError = NULL;
+    foreach ([FALSE, TRUE] as $testMode) {
+      try {
+        $client = self::getClientForMode($testMode);
+        $resource = match ($type) {
+          'payment' => $client->payments->get($this->mollieId),
+          'subscription' => $client->subscriptions->getForId($this->customerId, $this->mollieId),
+          'customer' => $client->customers->get($this->mollieId),
+          default => throw new \CRM_Core_Exception(E::ts('Unknown Mollie ID format: %1', [1 => $this->mollieId])),
+        };
+        break;
+      }
+      catch (ApiException $e) {
+        $lastError = $e;
+      }
     }
-    catch (ApiException $e) {
-      throw new \CRM_Core_Exception(E::ts('Mollie API error: %1', [1 => $e->getMessage()]));
+
+    if ($resource === NULL) {
+      throw new \CRM_Core_Exception(E::ts('Mollie API error: %1', [1 => $lastError->getMessage()]));
     }
 
     $dashboardUrl = $resource->_links->dashboard->href ?? '';
@@ -214,44 +215,6 @@ class Get extends AbstractAction {
     // Insert space before uppercase letters, then capitalize first word
     $spaced = preg_replace('/([a-z])([A-Z])/', '$1 $2', $key);
     return ucfirst($spaced);
-  }
-
-  /**
-   * Detect test mode from CiviCRM records for a Mollie ID.
-   *
-   * @param string $mollieId
-   *
-   * @return bool
-   */
-  protected static function detectTestMode(string $mollieId): bool {
-    if (str_starts_with($mollieId, 'tr_')) {
-      $row = \Civi\Api4\Contribution::get(FALSE)
-        ->addSelect('is_test')
-        ->addWhere('trxn_id', '=', $mollieId)
-        ->execute()
-        ->first();
-      return (bool) ($row['is_test'] ?? FALSE);
-    }
-
-    if (str_starts_with($mollieId, 'sub_')) {
-      $row = \Civi\Api4\ContributionRecur::get(FALSE)
-        ->addSelect('is_test')
-        ->addWhere('processor_id', '=', $mollieId)
-        ->execute()
-        ->first();
-      return (bool) ($row['is_test'] ?? FALSE);
-    }
-
-    if (str_starts_with($mollieId, 'cst_')) {
-      $row = \Civi\Api4\MollieCustomer::get(FALSE)
-        ->addSelect('payment_processor_id.is_test')
-        ->addWhere('mollie_customer_id', '=', $mollieId)
-        ->execute()
-        ->first();
-      return (bool) ($row['payment_processor_id.is_test'] ?? FALSE);
-    }
-
-    return FALSE;
   }
 
   /**

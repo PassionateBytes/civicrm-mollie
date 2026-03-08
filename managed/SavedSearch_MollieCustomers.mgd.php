@@ -119,7 +119,7 @@ return [
             ],
           ],
           'cssRules' => [
-            ['alert-warning', 'payment_processor_id.is_test', '=', TRUE],
+            ['alert-info font-italic', 'payment_processor_id.is_test', '=', TRUE],
           ],
           'filters' => [
             ['key' => 'payment_processor_id.is_test', 'default' => FALSE],
