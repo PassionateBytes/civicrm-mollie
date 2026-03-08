@@ -24,6 +24,7 @@ return [
             'receive_date',
             'trxn_id',
             'contribution_status_id:label',
+            'cancel_reason',
             'fee_amount',
             'contribution_recur_id',
             'is_test',
@@ -32,18 +33,11 @@ return [
             'receive_date' => 'DESC',
           ],
           'where' => [
-            ['ft.payment_processor_id.payment_processor_type_id:name', '=', 'mollie'],
+            ['trxn_id', 'LIKE', 'tr_%'],
             ['OR', [['is_test', '=', 0], ['is_test', '=', 1]]],
           ],
-          'groupBy' => ['id'],
-          'join' => [
-            [
-              'FinancialTrxn AS ft',
-              'INNER',
-              'EntityFinancialTrxn',
-              ['ft.payment_processor_id', 'IS NOT NULL'],
-            ],
-          ],
+          'groupBy' => [],
+          'join' => [],
           'having' => [],
         ],
       ],
@@ -125,6 +119,7 @@ return [
               'key' => 'contribution_status_id:label',
               'label' => E::ts('Status'),
               'sortable' => TRUE,
+              'title' => '[cancel_reason]',
             ],
             [
               'type' => 'field',

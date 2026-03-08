@@ -6,9 +6,9 @@
   <label><input type="checkbox" ng-model="showTest" /> Show test records</label>
 </div>
 <af-tabset>
-  <af-tab title="Payments">
+  <af-tab title="Contributions">
     <div af-fieldset="">
-      <p class="help alert-info" style="margin-top: 10px;">One-off and recurring contributions processed through Mollie. Click a payment ID to view it in the Mollie dashboard.</p>
+      <p class="help alert-info" style="margin-top: 10px;">One-off and recurring contributions processed through Mollie. Click a payment ID to view it in the Mollie dashboard. Hover over a status to see the cancel reason.</p>
       <crm-search-display-table search-name="Mollie_Payments" display-name="Mollie_Payments_Table" filters="{is_test: showTest ? '' : false}"></crm-search-display-table>
     </div>
   </af-tab>
