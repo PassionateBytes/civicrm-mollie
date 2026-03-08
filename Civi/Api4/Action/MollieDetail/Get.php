@@ -87,15 +87,15 @@ class Get extends AbstractAction {
   }
 
   /**
-   * Flatten a Mollie resource into display-friendly key-value pairs.
+   * Convert a Mollie resource into a nested display structure.
    *
-   * Handles nested amount objects, details objects, and skips internal
-   * fields (_links, _embedded, resource, client).
+   * Returns an associative array of label => value, where value is either
+   * a string (scalar), a JSON string (metadata), or a nested associative
+   * array (for objects rendered as sub-tables).
    *
    * @param object $resource
    *
    * @return array
-   *   Associative array of display label => value.
    */
   protected static function flattenResource(object $resource): array {
     $skip = ['_links', '_embedded', 'resource', 'client'];
@@ -106,7 +106,6 @@ class Get extends AbstractAction {
       if (in_array($key, $skip, TRUE)) {
         continue;
       }
-
       if ($value === NULL) {
         continue;
       }
@@ -114,94 +113,85 @@ class Get extends AbstractAction {
       $label = self::humanizeKey($key);
 
       if (in_array($key, $json, TRUE) && (is_object($value) || is_array($value))) {
-        $fields[$label] = json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        $fields[$label] = ['_json' => json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)];
         continue;
       }
 
-      if (is_object($value)) {
-        self::flattenObject($label, $value, $fields);
-      }
-      elseif (is_array($value)) {
-        self::flattenArray($label, $value, $fields);
-      }
-      else {
-        $fields[$label] = (string) $value;
-      }
+      $fields[$label] = self::convertValue($value);
     }
 
     return $fields;
   }
 
   /**
-   * Flatten a nested object into the fields array.
+   * Convert a value to a display-friendly representation.
+   *
+   * @param mixed $value
+   *
+   * @return string|array
+   */
+  protected static function convertValue(mixed $value): string|array {
+    if (is_object($value)) {
+      return self::convertObject($value);
+    }
+    if (is_array($value)) {
+      return self::convertArray($value);
+    }
+    return (string) $value;
+  }
+
+  /**
+   * Convert a nested object to a display structure.
    *
    * Recognizes Mollie amount objects ({value, currency}) and renders
-   * them as a single formatted value. Other objects are recursed.
+   * them as a single formatted string.
    *
-   * @param string $parentLabel
    * @param object $obj
-   * @param array $fields
+   *
+   * @return string|array
    */
-  protected static function flattenObject(string $parentLabel, object $obj, array &$fields): void {
+  protected static function convertObject(object $obj): string|array {
     $vars = get_object_vars($obj);
 
     // Mollie amount pattern: {value: "25.00", currency: "EUR"}
     if (isset($vars['value'], $vars['currency']) && count($vars) === 2) {
-      $fields[$parentLabel] = "{$vars['currency']} {$vars['value']}";
-      return;
+      return "{$vars['currency']} {$vars['value']}";
     }
 
-    foreach ($vars as $key => $value) {
-      if ($value === NULL || $key === '_links') {
+    $fields = [];
+    foreach ($vars as $key => $val) {
+      if ($val === NULL || $key === '_links') {
         continue;
       }
-      $childLabel = $parentLabel . ' › ' . self::humanizeKey($key);
-      if (is_object($value)) {
-        self::flattenObject($childLabel, $value, $fields);
-      }
-      elseif (is_array($value)) {
-        self::flattenArray($childLabel, $value, $fields);
-      }
-      else {
-        $fields[$childLabel] = (string) $value;
-      }
+      $fields[self::humanizeKey($key)] = self::convertValue($val);
     }
+    return $fields;
   }
 
   /**
-   * Flatten an array value into the fields array.
+   * Convert an array value to a display structure.
    *
-   * Scalar arrays are joined with commas. Object arrays are numbered
-   * and recursed.
+   * Scalar arrays are joined with commas. Object/array items are
+   * numbered and recursed.
    *
-   * @param string $parentLabel
    * @param array $arr
-   * @param array $fields
+   *
+   * @return string|array
    */
-  protected static function flattenArray(string $parentLabel, array $arr, array &$fields): void {
+  protected static function convertArray(array $arr): string|array {
     if (empty($arr)) {
-      return;
+      return '';
     }
 
-    // Scalar array (e.g., recentlyUsedMethods)
     if (!is_object(reset($arr)) && !is_array(reset($arr))) {
-      $fields[$parentLabel] = implode(', ', $arr);
-      return;
+      return implode(', ', $arr);
     }
 
-    // Array of objects
+    $fields = [];
     foreach ($arr as $i => $item) {
-      $indexLabel = $parentLabel . ' #' . ($i + 1);
-      if (is_object($item)) {
-        self::flattenObject($indexLabel, $item, $fields);
-      }
-      elseif (is_array($item)) {
-        self::flattenArray($indexLabel, $item, $fields);
-      }
-      else {
-        $fields[$indexLabel] = (string) $item;
-      }
+      $fields['#' . ($i + 1)] = self::convertValue($item);
     }
+    return $fields;
   }
 
   /**
