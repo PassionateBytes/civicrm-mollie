@@ -65,7 +65,7 @@ class Run extends AbstractAction {
           ->first();
 
         if (empty($contact['email_primary.email'])) {
-          \CRM_Mollie_Log::warning('Reminder: contact has no email', [
+          \CRM_Mollie_Log::warning("Reminder: contact {$recur['contact_id']} has no email (recur: {$recur['id']})", [
             'contact_id' => $recur['contact_id'],
             'contribution_recur_id' => $recur['id'],
           ]);
@@ -80,7 +80,7 @@ class Run extends AbstractAction {
       }
       catch (\Exception $e) {
         $stats['errors']++;
-        \CRM_Mollie_Log::error('Reminder: failed to send', [
+        \CRM_Mollie_Log::error("Reminder: failed to send for recur {$recur['id']}: {$e->getMessage()}", [
           'contribution_recur_id' => $recur['id'],
           'error' => $e->getMessage(),
         ]);
@@ -116,7 +116,7 @@ class Run extends AbstractAction {
       throw new \RuntimeException('Failed to send reminder email: ' . ($errorMsg ?? 'unknown error'));
     }
 
-    \CRM_Mollie_Log::info('Reminder sent', [
+    \CRM_Mollie_Log::info("Reminder sent for recur {$recur['id']} to contact {$recur['contact_id']} (next charge: {$recur['next_sched_contribution_date']})", [
       'contribution_recur_id' => $recur['id'],
       'contact_id' => $recur['contact_id'],
       'next_charge_date' => $recur['next_sched_contribution_date'],

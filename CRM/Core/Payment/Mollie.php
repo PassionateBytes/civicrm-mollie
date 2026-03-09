@@ -151,7 +151,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     try {
       $this->getMollieApiClient()->subscriptions->cancelForId($mollieCustomer, $recur['processor_id']);
 
-      $this->logInfo('Mollie subscription cancelled', [
+      $this->logInfo("Mollie subscription {$recur['processor_id']} cancelled (recur: {$recurId})", [
         'subscription_id' => $recur['processor_id'],
         'contribution_recur_id' => $recurId,
       ]);
@@ -160,7 +160,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       return TRUE;
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
-      $this->logError('Failed to cancel Mollie subscription', [
+      $this->logError("Failed to cancel Mollie subscription {$recur['processor_id']}: {$e->getMessage()}", [
         'subscription_id' => $recur['processor_id'],
         'error' => $e->getMessage(),
       ]);
@@ -215,7 +215,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         ],
       ]);
 
-      $this->logInfo('Mollie subscription amount updated', [
+      $this->logInfo("Mollie subscription {$recur['processor_id']} amount updated to {$newAmount} (recur: {$recurId})", [
         'subscription_id' => $recur['processor_id'],
         'contribution_recur_id' => $recurId,
         'new_amount' => $newAmount,
@@ -225,7 +225,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       return TRUE;
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
-      $this->logError('Failed to update Mollie subscription amount', [
+      $this->logError("Failed to update Mollie subscription {$recur['processor_id']} amount: {$e->getMessage()}", [
         'subscription_id' => $recur['processor_id'],
         'error' => $e->getMessage(),
       ]);
@@ -313,7 +313,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       $molliePayment = $this->getMollieApiClient()->payments->create($paymentParams);
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
-      $this->logError('Failed to create Mollie payment', [
+      $this->logError("Failed to create Mollie payment for contribution {$contributionId}: {$e->getMessage()}", [
         'error' => $e->getMessage(),
         'contribution_id' => $contributionId,
         'api_key' => $this->getApiKeyForLog(),
@@ -329,7 +329,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ->addValue('trxn_id', $molliePayment->id)
       ->execute();
 
-    $this->logInfo('Mollie payment created', [
+    $this->logInfo("Mollie payment {$molliePayment->id} created for contribution {$contributionId} ({$paymentParams['amount']['value']} {$paymentParams['amount']['currency']})", [
       'mollie_id' => $molliePayment->id,
       'contribution_id' => $contributionId,
       'amount' => $paymentParams['amount']['value'],
@@ -390,13 +390,13 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       return;
     }
 
-    $this->logDebug('Webhook received', ['mollie_payment_id' => $paymentId]);
+    $this->logDebug("Webhook received for payment {$paymentId}", ['mollie_payment_id' => $paymentId]);
 
     try {
       $molliePayment = $this->getMollieApiClient()->payments->get($paymentId);
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
-      $this->logError('Failed to fetch Mollie payment in webhook', [
+      $this->logError("Failed to fetch Mollie payment {$paymentId} in webhook: {$e->getMessage()}", [
         'mollie_payment_id' => $paymentId,
         'error' => $e->getMessage(),
       ]);
@@ -404,10 +404,11 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       return;
     }
 
-    $this->logDebug('Mollie payment fetched', [
+    $subscriptionId = $molliePayment->subscriptionId ?? NULL;
+    $this->logDebug("Mollie payment {$paymentId} fetched: status={$molliePayment->status}" . ($subscriptionId ? " subscription={$subscriptionId}" : ''), [
       'mollie_payment_id' => $paymentId,
       'status' => $molliePayment->status,
-      'has_subscription' => !empty($molliePayment->subscriptionId),
+      'subscription_id' => $subscriptionId,
     ]);
 
     if (!empty($molliePayment->subscriptionId)) {
@@ -428,7 +429,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   protected function processOneOffOrFirstPaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment): void {
     $contribution = $this->findContributionByTrxnId($molliePayment->id);
     if ($contribution === NULL) {
-      $this->logWarning('Webhook for unknown contribution', [
+      $this->logWarning("Webhook for unknown contribution (mollie: {$molliePayment->id})", [
         'mollie_payment_id' => $molliePayment->id,
       ]);
       $this->recordUnmatchedWebhookActivity($molliePayment, E::ts(
@@ -448,7 +449,8 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
 
     // Idempotency: skip if already completed.
     if ($contribution['contribution_status_id:name'] === 'Completed') {
-      $this->logDebug('Contribution already completed, skipping', [
+      $this->logDebug("Contribution {$contribution['id']} already completed, skipping (mollie: {$molliePayment->id})", [
+        'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $contribution['id'],
       ]);
       return;
@@ -493,7 +495,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
 
     // Idempotency: skip if we already recorded this payment.
     if ($existing !== NULL) {
-      $this->logDebug('Recurring payment already recorded, skipping', [
+      $this->logDebug("Recurring payment {$molliePayment->id} already recorded as contribution {$existing['id']}, skipping", [
         'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $existing['id'],
       ]);
@@ -502,7 +504,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
 
     $contributionRecur = $this->findContributionRecurByProcessorId($subscriptionId);
     if ($contributionRecur === NULL) {
-      $this->logWarning('Webhook for unknown subscription', [
+      $this->logWarning("Webhook for unknown subscription {$subscriptionId} (mollie: {$molliePayment->id})", [
         'mollie_payment_id' => $molliePayment->id,
         'subscription_id' => $subscriptionId,
       ]);
@@ -555,14 +557,16 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     try {
       civicrm_api3('Payment', 'create', $params);
 
-      $this->logInfo('Contribution completed', [
+      $method = $molliePayment->method ?? 'unknown';
+      $this->logInfo("Contribution {$contribution['id']} completed via {$method} (mollie: {$molliePayment->id})", [
         'contribution_id' => $contribution['id'],
         'mollie_payment_id' => $molliePayment->id,
-        'payment_method' => $molliePayment->method ?? 'unknown',
+        'payment_method' => $method,
       ]);
     }
     catch (\Exception $e) {
-      $this->logError('Failed to complete contribution', [
+      $this->logError("Failed to complete contribution {$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+        'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $contribution['id'],
         'error' => $e->getMessage(),
       ]);
@@ -587,14 +591,15 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         ->addValue('cancel_reason', $cancelReason)
         ->execute();
 
-      $this->logInfo('Contribution marked as ' . $statusName, [
+      $this->logInfo("Contribution {$contribution['id']} marked as {$statusName} (mollie: {$molliePayment->id})", [
         'contribution_id' => $contribution['id'],
         'mollie_payment_id' => $molliePayment->id,
         'mollie_status' => $molliePayment->status,
       ]);
     }
     catch (\Exception $e) {
-      $this->logError('Failed to update contribution status', [
+      $this->logError("Failed to update contribution {$contribution['id']} status (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+        'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $contribution['id'],
         'error' => $e->getMessage(),
       ]);
@@ -625,14 +630,15 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         ->addValue('next_sched_contribution_date', NULL)
         ->execute();
 
-      $this->logInfo('ContributionRecur marked as ' . $statusName, [
+      $this->logInfo("ContributionRecur {$recurId} marked as {$statusName} (mollie: {$molliePayment->id})", [
         'contribution_recur_id' => $recurId,
         'mollie_payment_id' => $molliePayment->id,
         'reason' => 'first payment or subscription setup failed',
       ]);
     }
     catch (\Exception $e) {
-      $this->logError('Failed to update ContributionRecur status', [
+      $this->logError("Failed to update ContributionRecur {$recurId} status (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+        'mollie_payment_id' => $molliePayment->id,
         'contribution_recur_id' => $recurId,
         'error' => $e->getMessage(),
       ]);
@@ -683,7 +689,8 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   protected function handleChargeback(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
     // Already marked as chargeback — nothing to do.
     if ($contribution['contribution_status_id:name'] === 'Chargeback') {
-      $this->logDebug('Contribution already marked as Chargeback, skipping', [
+      $this->logDebug("Contribution {$contribution['id']} already marked as Chargeback, skipping (mollie: {$molliePayment->id})", [
+        'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $contribution['id'],
       ]);
       return;
@@ -706,15 +713,17 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       // Fetch chargeback details from Mollie for the paper trail.
       $this->recordChargebackNote($contribution, $molliePayment, $chargebackAmount, $currency);
 
-      $this->logWarning('Chargeback received', [
+      $originalAmount = $molliePayment->amount->value ?? 'unknown';
+      $this->logWarning("Chargeback received on contribution {$contribution['id']}: {$chargebackAmount} of {$originalAmount} {$currency} (mollie: {$molliePayment->id})", [
         'contribution_id' => $contribution['id'],
         'mollie_payment_id' => $molliePayment->id,
         'chargeback_amount' => $chargebackAmount,
-        'original_amount' => $molliePayment->amount->value ?? 'unknown',
+        'original_amount' => $originalAmount,
       ]);
     }
     catch (\Exception $e) {
-      $this->logError('Failed to process chargeback', [
+      $this->logError("Failed to process chargeback on contribution {$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+        'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $contribution['id'],
         'error' => $e->getMessage(),
       ]);
@@ -781,7 +790,8 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         ->execute();
     }
     catch (\Exception $e) {
-      $this->logError('Failed to create chargeback note', [
+      $this->logError("Failed to create chargeback note for contribution {$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+        'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $contribution['id'],
         'error' => $e->getMessage(),
       ]);
@@ -808,7 +818,8 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     try {
       $mandateId = $this->verifyMandate($customerId);
       if ($mandateId === NULL) {
-        $this->logError('No valid mandate found after first recurring payment', [
+        $this->logError("No valid mandate found for customer {$customerId} after first recurring payment (mollie: {$molliePayment->id}, contribution: {$contribution['id']})", [
+          'mollie_payment_id' => $molliePayment->id,
           'contribution_id' => $contribution['id'],
           'mollie_customer_id' => $customerId,
         ]);
@@ -834,7 +845,8 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
           ->addValue('contribution_status_id:name', 'Completed')
           ->execute();
 
-        $this->logInfo('Single-installment recurring contribution completed (no subscription needed)', [
+        $this->logInfo("Single-installment recur {$recurId} completed, no subscription needed (mollie: {$molliePayment->id}, customer: {$customerId})", [
+          'mollie_payment_id' => $molliePayment->id,
           'contribution_recur_id' => $recurId,
           'mollie_customer_id' => $customerId,
         ]);
@@ -854,7 +866,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         ->addValue('contribution_status_id:name', 'In Progress')
         ->execute();
 
-      $this->logInfo('Mollie subscription created', [
+      $this->logInfo("Mollie subscription {$subscriptionId} created for recur {$recurId} (customer: {$customerId}, mandate: {$mandateId})", [
         'subscription_id' => $subscriptionId,
         'contribution_recur_id' => $recurId,
         'mollie_customer_id' => $customerId,
@@ -862,7 +874,8 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ]);
     }
     catch (\Exception $e) {
-      $this->logError('Failed to set up recurring subscription after first payment', [
+      $this->logError("Failed to set up recurring subscription for recur {$recurId} after first payment (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+        'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $contribution['id'],
         'contribution_recur_id' => $recurId,
         'error' => $e->getMessage(),
@@ -976,14 +989,15 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
           ->execute();
       }
 
-      $this->logInfo('Recurring installment recorded', [
+      $amount = $molliePayment->amount->value;
+      $this->logInfo("Recurring installment recorded for recur {$contributionRecur['id']}: {$amount} (mollie: {$molliePayment->id})", [
         'contribution_recur_id' => $contributionRecur['id'],
         'mollie_payment_id' => $molliePayment->id,
-        'amount' => $molliePayment->amount->value,
+        'amount' => $amount,
       ]);
     }
     catch (\Exception $e) {
-      $this->logError('Failed to record recurring installment', [
+      $this->logError("Failed to record recurring installment for recur {$contributionRecur['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
         'contribution_recur_id' => $contributionRecur['id'],
         'mollie_payment_id' => $molliePayment->id,
         'error' => $e->getMessage(),
@@ -1020,13 +1034,14 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         ->addValue('failure_count', ($contributionRecur['failure_count'] ?? 0) + 1)
         ->execute();
 
-      $this->logWarning('Recurring installment failed', [
+      $this->logWarning("Recurring installment failed for recur {$contributionRecur['id']} (mollie: {$molliePayment->id})", [
         'contribution_recur_id' => $contributionRecur['id'],
         'mollie_payment_id' => $molliePayment->id,
       ]);
     }
     catch (\Exception $e) {
-      $this->logError('Failed to record failed recurring installment', [
+      $this->logError("Failed to record failed recurring installment for recur {$contributionRecur['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+        'mollie_payment_id' => $molliePayment->id,
         'contribution_recur_id' => $contributionRecur['id'],
         'error' => $e->getMessage(),
       ]);
@@ -1076,7 +1091,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ]);
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
-      $this->logError('Failed to create Mollie customer', [
+      $this->logError("Failed to create Mollie customer for contact {$contactId}: {$e->getMessage()}", [
         'contact_id' => $contactId,
         'error' => $e->getMessage(),
       ]);
@@ -1091,7 +1106,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ->addValue('mollie_customer_id', $mollieCustomer->id)
       ->execute();
 
-    $this->logInfo('Mollie customer created', [
+    $this->logInfo("Mollie customer {$mollieCustomer->id} created for contact {$contactId}", [
       'mollie_customer_id' => $mollieCustomer->id,
       'contact_id' => $contactId,
     ]);
@@ -1120,7 +1135,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       }
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
-      $this->logError('Failed to verify mandate', [
+      $this->logError("Failed to verify mandate for customer {$customerId}: {$e->getMessage()}", [
         'mollie_customer_id' => $customerId,
         'error' => $e->getMessage(),
       ]);
@@ -1315,7 +1330,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       $this->mollieClient->setApiKey($apiKey);
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
-      $this->logError('Failed to initialize Mollie API client', [
+      $this->logError("Failed to initialize Mollie API client: {$e->getMessage()}", [
         'error' => $e->getMessage(),
       ]);
       throw new PaymentProcessorException(
@@ -1394,15 +1409,18 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         ->addValue('priority_id:name', 'Urgent')
         ->execute();
 
-      $this->logWarning('Unmatched webhook activity created', [
-        'activity_id' => $activity->first()['id'] ?? NULL,
-        'mollie_payment_id' => $molliePayment->id ?? NULL,
+      $activityId = $activity->first()['id'] ?? NULL;
+      $mollieId = $molliePayment->id ?? 'unknown';
+      $this->logWarning("Unmatched webhook activity {$activityId} created for payment {$mollieId}", [
+        'activity_id' => $activityId,
+        'mollie_payment_id' => $mollieId,
         'reason' => $reason,
       ]);
     }
     catch (\Exception $e) {
-      $this->logError('Failed to create unmatched webhook activity', [
-        'mollie_payment_id' => $molliePayment->id ?? NULL,
+      $mollieId = $molliePayment->id ?? 'unknown';
+      $this->logError("Failed to create unmatched webhook activity for payment {$mollieId}: {$e->getMessage()}", [
+        'mollie_payment_id' => $mollieId,
         'error' => $e->getMessage(),
       ]);
     }
