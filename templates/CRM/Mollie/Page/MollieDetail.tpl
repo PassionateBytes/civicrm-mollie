@@ -41,13 +41,34 @@
     .mollie-detail-panel .mollie-detail-panel td.label {
       background-color: #fafafa;
     }
+    .mollie-detail-footer {
+      display: flex;
+      align-items: center;
+      margin-top: 1em;
+      gap: 1em;
+    }
+    .mollie-detail-footer .mollie-related-links {
+      display: flex;
+      gap: 1em;
+      margin-left: auto;
+    }
   </style>
   {/literal}
-  {if $dashboardUrl}
-    <div style="margin-top: 1em; text-align: right;">
-      <a href="{$dashboardUrl}" onclick="window.open(this.href); return false;" class="button">
-        <span><i class="crm-i fa-external-link"></i> {ts domain="nl.stichtinggast.mollie"}View in Mollie Dashboard{/ts}</span>
-      </a>
+  {if $dashboardUrl || $relatedLinks || $documentationUrl}
+    <div class="mollie-detail-footer">
+      {if $dashboardUrl}
+        <a href="{$dashboardUrl}" onclick="window.open(this.href); return false;" class="button">
+          <span><i class="crm-i fa-external-link"></i> {ts domain="nl.stichtinggast.mollie"}Open in Mollie{/ts}</span>
+        </a>
+      {/if}
+      <div class="mollie-related-links">
+        {foreach from=$relatedLinks key=label item=href}
+          <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=$href"}" target="crm-popup">{$label}</a>
+        {/foreach}
+        {if $documentationUrl}
+          <a href="{$documentationUrl}" onclick="window.open(this.href); return false;"><i class="crm-i fa-book"></i> {ts domain="nl.stichtinggast.mollie"}API Docs{/ts}</a>
+        {/if}
+      </div>
     </div>
   {/if}
 {/if}

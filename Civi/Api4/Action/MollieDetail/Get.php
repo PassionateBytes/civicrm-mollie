@@ -8,65 +8,65 @@ use CRM_Mollie_ExtensionUtil as E;
 use Mollie\Api\Exceptions\ApiException;
 
 /**
- * Fetch a Mollie resource (payment, subscription, or customer) by ID.
- *
- * Detects the resource type from the ID prefix and returns a flattened
- * key-value representation suitable for display.
+ * Fetch a Mollie resource by API URL and return a structured representation.
  */
 class Get extends AbstractAction {
 
   /**
-   * The Mollie resource ID (e.g. tr_xxx, sub_xxx, cst_xxx).
+   * Mollie API path to fetch (e.g. v2/payments/tr_xxx).
    *
    * @var string
    * @required
    */
-  protected string $mollieId = '';
-
-  /**
-   * Mollie customer ID, required for subscription lookups.
-   *
-   * @var string
-   */
-  protected string $customerId = '';
+  protected string $apiPath = '';
 
   /**
    * @param Result $result
    */
   public function _run(Result $result): void {
-    $type = self::detectType($this->mollieId);
+    $resource = $this->fetchResource($this->apiPath);
 
-    // Try live key first, fall back to test key.
+    $mollieId = $resource->id ?? '';
+    $type = self::detectType($mollieId);
+    $dashboardUrl = $resource->_links->dashboard->href ?? '';
+    $links = self::extractLinks($resource);
+
+    $result[] = [
+      'type' => $type,
+      'mollie_id' => $mollieId,
+      'dashboard_url' => $dashboardUrl,
+      'related_links' => $links['related'],
+      'documentation_url' => $links['documentation'],
+      'fields' => self::flattenResource($resource),
+    ];
+  }
+
+  /**
+   * Fetch a resource from a Mollie API path, trying live then test key.
+   *
+   * @param string $apiPath
+   *
+   * @return \stdClass
+   */
+  protected function fetchResource(string $apiPath): \stdClass {
     $resource = NULL;
-    $lastError = NULL;
+    $firstError = NULL;
     foreach ([FALSE, TRUE] as $testMode) {
       try {
         $client = self::getClientForMode($testMode);
-        $resource = match ($type) {
-          'payment' => $client->payments->get($this->mollieId),
-          'subscription' => $client->subscriptions->getForId($this->customerId, $this->mollieId),
-          'customer' => $client->customers->get($this->mollieId),
-          default => throw new \CRM_Core_Exception(E::ts('Unknown Mollie ID format: %1', [1 => $this->mollieId])),
-        };
+        $resource = $client->performHttpCall('GET', $apiPath);
         break;
       }
-      catch (ApiException $e) {
-        $lastError = $e;
+      catch (ApiException|\CRM_Core_Exception $e) {
+        $firstError ??= $e;
       }
     }
 
     if ($resource === NULL) {
-      throw new \CRM_Core_Exception(E::ts('Mollie API error: %1', [1 => $lastError->getMessage()]));
+      throw new \CRM_Core_Exception(E::ts('Mollie API error: %1', [1 => $firstError->getMessage()]));
     }
 
-    $dashboardUrl = $resource->_links->dashboard->href ?? '';
-
-    $result[] = [
-      'type' => $type,
-      'mollie_id' => $this->mollieId,
-      'dashboard_url' => $dashboardUrl,
-      'fields' => self::flattenResource($resource),
-    ];
+    return $resource;
   }
 
   /**
@@ -75,7 +75,6 @@ class Get extends AbstractAction {
    * @param string $mollieId
    *
    * @return string
-   *   One of 'payment', 'subscription', 'customer'.
    */
   protected static function detectType(string $mollieId): string {
     return match (TRUE) {
@@ -87,17 +86,56 @@ class Get extends AbstractAction {
   }
 
   /**
+   * Extract categorized links from a Mollie resource.
+   *
+   * @param \stdClass $resource
+   *
+   * @return array
+   *   Keys: 'related' (array of label => href), 'documentation' (string).
+   */
+  protected static function extractLinks(\stdClass $resource): array {
+    $links = ['related' => [], 'documentation' => ''];
+    $rawLinks = get_object_vars($resource->_links ?? new \stdClass());
+    $skip = ['self', 'dashboard', 'profile'];
+    $baseUrl = \Mollie\Api\MollieApiClient::API_ENDPOINT . '/' . \Mollie\Api\MollieApiClient::API_VERSION . '/';
+
+    foreach ($rawLinks as $key => $link) {
+      if (in_array($key, $skip, TRUE)) {
+        continue;
+      }
+
+      $href = $link->href ?? '';
+      $type = $link->type ?? '';
+
+      if ($key === 'documentation') {
+        $links['documentation'] = $href;
+        continue;
+      }
+
+      if (str_contains($type, 'json') && !empty($href)) {
+        // Strip base URL to get the API path.
+        $path = str_starts_with($href, $baseUrl)
+          ? substr($href, strlen($baseUrl))
+          : $href;
+        $links['related'][self::humanizeKey($key)] = $path;
+      }
+    }
+
+    return $links;
+  }
+
+  /**
    * Convert a Mollie resource into a nested display structure.
    *
    * Returns an associative array of label => value, where value is either
    * a string (scalar), a JSON string (metadata), or a nested associative
    * array (for objects rendered as sub-tables).
    *
-   * @param object $resource
+   * @param \stdClass $resource
    *
    * @return array
    */
-  protected static function flattenResource(object $resource): array {
+  protected static function flattenResource(\stdClass $resource): array {
     $skip = ['_links', '_embedded', 'resource', 'client'];
     $json = ['metadata'];
     $fields = [];
@@ -202,7 +240,6 @@ class Get extends AbstractAction {
    * @return string
    */
   protected static function humanizeKey(string $key): string {
-    // Insert space before uppercase letters, then capitalize first word
     $spaced = preg_replace('/([a-z])([A-Z])/', '$1 $2', $key);
     return ucfirst($spaced);
   }
