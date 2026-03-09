@@ -26,12 +26,42 @@ class Get extends AbstractAction {
   public function _run(Result $result): void {
     $resource = $this->fetchResource($this->apiPath);
 
+    if (self::isListResponse($resource)) {
+      $this->buildListResult($resource, $result);
+    }
+    else {
+      $this->buildSingleResult($resource, $result);
+    }
+  }
+
+  /**
+   * Detect whether a response is a paginated list.
+   *
+   * List responses have `_embedded` and `count` at the top level;
+   * single resources have `id` and `resource`.
+   *
+   * @param \stdClass $resource
+   *
+   * @return bool
+   */
+  protected static function isListResponse(\stdClass $resource): bool {
+    return isset($resource->_embedded) && isset($resource->count) && !isset($resource->id);
+  }
+
+  /**
+   * Build result for a single resource response.
+   *
+   * @param \stdClass $resource
+   * @param Result $result
+   */
+  protected function buildSingleResult(\stdClass $resource, Result $result): void {
     $mollieId = $resource->id ?? '';
     $type = self::detectType($mollieId);
     $dashboardUrl = $resource->_links->dashboard->href ?? '';
     $links = self::extractLinks($resource);
 
     $result[] = [
+      'is_list' => FALSE,
       'type' => $type,
       'mollie_id' => $mollieId,
       'dashboard_url' => $dashboardUrl,
@@ -39,6 +69,72 @@ class Get extends AbstractAction {
       'documentation_url' => $links['documentation'],
       'fields' => self::flattenResource($resource),
     ];
+  }
+
+  /**
+   * Build result for a paginated list response.
+   *
+   * @param \stdClass $resource
+   * @param Result $result
+   */
+  protected function buildListResult(\stdClass $resource, Result $result): void {
+    $links = self::extractLinks($resource);
+    $pagination = self::extractPagination($resource);
+
+    // The _embedded object has a single key whose value is the items array.
+    $embedded = get_object_vars($resource->_embedded);
+    $collectionKey = array_key_first($embedded);
+    $items = $embedded[$collectionKey] ?? [];
+
+    $flattenedItems = [];
+    foreach ($items as $item) {
+      $itemLinks = self::extractLinks($item);
+      $selfHref = $item->_links->self->href ?? '';
+      if (!empty($selfHref)) {
+        $selfPath = self::stripBaseUrl($selfHref);
+        $itemLinks['related'] = [E::ts('Complete Record') => $selfPath] + $itemLinks['related'];
+      }
+      $flattenedItems[] = [
+        'fields' => self::flattenResource($item),
+        'dashboard_url' => $item->_links->dashboard->href ?? '',
+        'related_links' => $itemLinks['related'],
+        'documentation_url' => $itemLinks['documentation'],
+      ];
+    }
+
+    $result[] = [
+      'is_list' => TRUE,
+      'type' => self::humanizeKey($collectionKey),
+      'mollie_id' => '',
+      'dashboard_url' => '',
+      'count' => $resource->count,
+      'items' => $flattenedItems,
+      'pagination' => $pagination,
+      'related_links' => $links['related'],
+      'documentation_url' => $links['documentation'],
+      'fields' => ['Count' => (string) $resource->count],
+    ];
+  }
+
+  /**
+   * Extract pagination links (previous/next) from a list response.
+   *
+   * @param \stdClass $resource
+   *
+   * @return array
+   *   Keys: 'previous' (string|null), 'next' (string|null).
+   */
+  protected static function extractPagination(\stdClass $resource): array {
+    $pagination = ['previous' => '', 'next' => ''];
+
+    foreach (['previous', 'next'] as $dir) {
+      $link = $resource->_links->$dir ?? NULL;
+      if ($link && !empty($link->href)) {
+        $pagination[$dir] = self::stripBaseUrl($link->href);
+      }
+    }
+
+    return $pagination;
   }
 
   /**
@@ -96,8 +192,7 @@ class Get extends AbstractAction {
   protected static function extractLinks(\stdClass $resource): array {
     $links = ['related' => [], 'documentation' => ''];
     $rawLinks = get_object_vars($resource->_links ?? new \stdClass());
-    $skip = ['self', 'dashboard', 'profile'];
-    $baseUrl = \Mollie\Api\MollieApiClient::API_ENDPOINT . '/' . \Mollie\Api\MollieApiClient::API_VERSION . '/';
+    $skip = ['self', 'dashboard', 'profile', 'previous', 'next', 'settlement'];
 
     foreach ($rawLinks as $key => $link) {
       if (in_array($key, $skip, TRUE)) {
@@ -113,10 +208,7 @@ class Get extends AbstractAction {
       }
 
       if (str_contains($type, 'json') && !empty($href)) {
-        // Strip base URL to get the API path.
-        $path = str_starts_with($href, $baseUrl)
-          ? substr($href, strlen($baseUrl))
-          : $href;
+        $path = self::stripBaseUrl($href);
         $links['related'][self::humanizeKey($key)] = $path;
       }
     }
@@ -242,6 +334,20 @@ class Get extends AbstractAction {
   protected static function humanizeKey(string $key): string {
     $spaced = preg_replace('/([a-z])([A-Z])/', '$1 $2', $key);
     return ucfirst($spaced);
+  }
+
+  /**
+   * Strip the Mollie API base URL to get a relative path for performHttpCall.
+   *
+   * @param string $url
+   *
+   * @return string
+   */
+  protected static function stripBaseUrl(string $url): string {
+    $baseUrl = \Mollie\Api\MollieApiClient::API_ENDPOINT . '/' . \Mollie\Api\MollieApiClient::API_VERSION . '/';
+    return str_starts_with($url, $baseUrl)
+      ? substr($url, strlen($baseUrl))
+      : $url;
   }
 
   /**

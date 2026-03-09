@@ -114,7 +114,7 @@ return [
               'label' => E::ts('Subscription ID'),
               'sortable' => TRUE,
               'link' => [
-                'path' => 'civicrm/admin/mollie/detail?mollie_id=[processor_id]&cid=[mollie_customer.mollie_customer_id]',
+                'path' => 'civicrm/admin/mollie/detail?api_path=customers/[mollie_customer.mollie_customer_id]/subscriptions/[processor_id]',
                 'entity' => '',
                 'action' => '',
                 'join' => '',

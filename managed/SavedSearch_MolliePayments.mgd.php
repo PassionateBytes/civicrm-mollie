@@ -89,7 +89,7 @@ return [
               'label' => E::ts('Mollie Payment ID'),
               'sortable' => TRUE,
               'link' => [
-                'path' => 'civicrm/admin/mollie/detail?mollie_id=[trxn_id]',
+                'path' => 'civicrm/admin/mollie/detail?api_path=payments/[trxn_id]',
                 'entity' => '',
                 'action' => '',
                 'join' => '',

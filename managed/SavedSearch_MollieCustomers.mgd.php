@@ -92,7 +92,7 @@ return [
               'label' => E::ts('Mollie Customer ID'),
               'sortable' => TRUE,
               'link' => [
-                'path' => 'civicrm/admin/mollie/detail?mollie_id=[mollie_customer_id]',
+                'path' => 'civicrm/admin/mollie/detail?api_path=customers/[mollie_customer_id]',
                 'entity' => '',
                 'action' => '',
                 'join' => '',
