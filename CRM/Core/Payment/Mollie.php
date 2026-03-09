@@ -158,6 +158,17 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       return TRUE;
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
+      // 410 Gone means the subscription was already canceled or deleted on
+      // Mollie. Treat as success — the desired outcome is achieved.
+      if ($e->getCode() === 410) {
+        $this->logInfo("Mollie subscription {$recur['processor_id']} already canceled on Mollie (ContributionRecur #{$recurId})", [
+          'subscription_id' => $recur['processor_id'],
+          'contribution_recur_id' => $recurId,
+        ]);
+        $message = E::ts('Mollie subscription was already cancelled.');
+        return TRUE;
+      }
+
       $this->logError("Failed to cancel Mollie subscription {$recur['processor_id']}: {$e->getMessage()}", [
         'subscription_id' => $recur['processor_id'],
         'error' => $e->getMessage(),
@@ -194,8 +205,9 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
 
     // Mollie does not support changing the number of installments on an
     // existing subscription. Block the update if installments changed.
-    $newInstallments = $params['installments'] ?? NULL;
-    if (($newInstallments ?? NULL) != ($recur['installments'] ?? NULL)) {
+    $newInstallments = isset($params['installments']) ? (int) $params['installments'] : NULL;
+    $oldInstallments = isset($recur['installments']) ? (int) $recur['installments'] : NULL;
+    if ($newInstallments !== $oldInstallments) {
       throw new PaymentProcessorException(E::ts('The number of installments cannot be changed on a Mollie subscription. Cancel this subscription and create a new one instead.'));
     }
 
@@ -383,6 +395,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * form-encoded data with `id=<payment_id>`.
    */
   public function handlePaymentNotification(): void {
+    // Ensure webhook processing completes even if Mollie closes the
+    // connection after its 15-second timeout.
+    ignore_user_abort(TRUE);
+
     $paymentId = $_POST['id'] ?? NULL;
     if (empty($paymentId)) {
       $this->logWarning('Webhook received without payment ID');
@@ -515,6 +531,13 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         $this->failContributionRecur($contribution['contribution_recur_id'], $molliePayment);
       }
     }
+    else {
+      $this->logInfo("Webhook for Contribution #{$contribution['id']} has unhandled Mollie status '{$molliePayment->status}', no action taken (mollie: {$molliePayment->id})", [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_id' => $contribution['id'],
+        'mollie_status' => $molliePayment->status,
+      ]);
+    }
   }
 
   /**
@@ -558,6 +581,14 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     elseif ($molliePayment->isFailed() || $molliePayment->isExpired() || $molliePayment->isCanceled()) {
       $this->recordFailedRecurringInstallment($contributionRecur, $molliePayment);
     }
+    else {
+      $this->logInfo("Recurring webhook for ContributionRecur #{$contributionRecur['id']} has unhandled Mollie status '{$molliePayment->status}', no action taken (mollie: {$molliePayment->id})", [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_recur_id' => $contributionRecur['id'],
+        'subscription_id' => $subscriptionId,
+        'mollie_status' => $molliePayment->status,
+      ]);
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -584,10 +615,25 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       'is_send_contribution_notification' => $contribution['is_email_receipt'] ?? FALSE,
     ];
 
+    // Mollie does not provide an explicit fee field. Fees are derived from
+    // amount - settlementAmount, where settlementAmount is the approximate
+    // amount settled to the merchant account. This only works when both are
+    // in the same currency. In multi-currency contexts, the Balance
+    // Transactions API would be needed for accurate fees.
+    // TODO: If multi-currency support is added, integrate the Balance
+    // Transactions API (GET /v2/balances/{id}/transactions) for precise fees.
     if ($molliePayment->settlementAmount !== NULL) {
-      $feeAmount = (float) $molliePayment->amount->value - (float) $molliePayment->settlementAmount->value;
-      if ($feeAmount > 0) {
-        $params['fee_amount'] = number_format($feeAmount, 2, '.', '');
+      if (($molliePayment->amount->currency ?? 'EUR') !== ($molliePayment->settlementAmount->currency ?? 'EUR')) {
+        $this->logWarning("Currency mismatch on fee calculation for Contribution #{$contribution['id']}: amount={$molliePayment->amount->currency}, settlement={$molliePayment->settlementAmount->currency} (mollie: {$molliePayment->id})", [
+          'mollie_payment_id' => $molliePayment->id,
+          'contribution_id' => $contribution['id'],
+        ]);
+      }
+      else {
+        $feeAmount = (float) $molliePayment->amount->value - (float) $molliePayment->settlementAmount->value;
+        if ($feeAmount > 0) {
+          $params['fee_amount'] = number_format($feeAmount, 2, '.', '');
+        }
       }
     }
 
@@ -1017,9 +1063,12 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     $customerId = $molliePayment->customerId;
 
     try {
-      $mandateId = $this->verifyMandate($customerId);
+      // The payment object carries the mandateId that Mollie created from
+      // this first payment. Using it directly is more precise than listing
+      // all mandates (which could return a different one) and saves an API call.
+      $mandateId = $molliePayment->mandateId;
       if ($mandateId === NULL) {
-        $this->logError("No valid mandate found for customer {$customerId} after first recurring payment (mollie: {$molliePayment->id}, Contribution #{$contribution['id']})", [
+        $this->logError("No mandate ID on first recurring payment for customer {$customerId} (mollie: {$molliePayment->id}, Contribution #{$contribution['id']})", [
           'mollie_payment_id' => $molliePayment->id,
           'contribution_id' => $contribution['id'],
           'mollie_customer_id' => $customerId,
@@ -1121,9 +1170,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ],
     ];
 
-    if (!empty($recur['next_sched_contribution_date'])) {
-      $subscriptionParams['startDate'] = date('Y-m-d', strtotime($recur['next_sched_contribution_date']));
-    }
+    $subscriptionParams['startDate'] = $this->computeSubscriptionStartDate($recur);
 
     // Subtract 1 from installments since the first payment was already made.
     if (!empty($recur['installments']) && $recur['installments'] > 1) {
@@ -1148,9 +1195,17 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   protected function createRecurringInstallment(array $contributionRecur, \Mollie\Api\Resources\Payment $molliePayment): void {
     $feeAmount = NULL;
     if ($molliePayment->settlementAmount !== NULL) {
-      $fee = (float) $molliePayment->amount->value - (float) $molliePayment->settlementAmount->value;
-      if ($fee > 0) {
-        $feeAmount = number_format($fee, 2, '.', '');
+      if (($molliePayment->amount->currency ?? 'EUR') !== ($molliePayment->settlementAmount->currency ?? 'EUR')) {
+        $this->logWarning("Currency mismatch on fee calculation for recurring installment: amount={$molliePayment->amount->currency}, settlement={$molliePayment->settlementAmount->currency} (mollie: {$molliePayment->id})", [
+          'mollie_payment_id' => $molliePayment->id,
+          'contribution_recur_id' => $contributionRecur['id'],
+        ]);
+      }
+      else {
+        $fee = (float) $molliePayment->amount->value - (float) $molliePayment->settlementAmount->value;
+        if ($fee > 0) {
+          $feeAmount = number_format($fee, 2, '.', '');
+        }
       }
     }
 
@@ -1316,36 +1371,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   }
 
   /**
-   * Verify that a valid mandate exists for a Mollie customer.
-   *
-   * @param string $customerId
-   *
-   * @return string|null
-   *   The mandate ID if valid, null otherwise.
-   */
-  protected function verifyMandate(string $customerId): ?string {
-    try {
-      $mandates = $this->getMollieApiClient()->mandates->listForId($customerId);
-      // Accept both valid and pending mandates. SEPA mandates from iDEAL
-      // can briefly be "pending" before transitioning to "valid".
-      // Mollie allows subscription creation with pending mandates.
-      foreach ($mandates as $mandate) {
-        if ($mandate->isValid() || $mandate->isPending()) {
-          return $mandate->id;
-        }
-      }
-    }
-    catch (\Mollie\Api\Exceptions\ApiException $e) {
-      $this->logError("Failed to verify mandate for customer {$customerId}: {$e->getMessage()}", [
-        'mollie_customer_id' => $customerId,
-        'error' => $e->getMessage(),
-      ]);
-    }
-
-    return NULL;
-  }
-
-  /**
    * Create a PaymentToken record for a Mollie mandate.
    *
    * @param int $contactId
@@ -1445,6 +1470,29 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         E::ts('Unsupported recurring frequency: %1', [1 => $frequencyUnit])
       ),
     };
+  }
+
+  /**
+   * Compute the subscription start date from a ContributionRecur.
+   *
+   * Uses the scheduled next contribution date if available, otherwise
+   * falls back to today + one billing interval to avoid charging on the
+   * same day as the first payment.
+   *
+   * @param array $recur
+   *
+   * @return string
+   *   Start date in Y-m-d format.
+   */
+  protected function computeSubscriptionStartDate(array $recur): string {
+    if (!empty($recur['next_sched_contribution_date'])) {
+      return date('Y-m-d', strtotime($recur['next_sched_contribution_date']));
+    }
+
+    $interval = $recur['frequency_interval'] ?? 1;
+    $unit = $recur['frequency_unit'] ?? 'month';
+
+    return date('Y-m-d', strtotime("+{$interval} {$unit}"));
   }
 
   /**
