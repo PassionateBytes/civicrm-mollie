@@ -186,11 +186,18 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     }
 
     $recur = \Civi\Api4\ContributionRecur::get(FALSE)
-      ->addSelect('processor_id', 'contact_id', 'currency')
+      ->addSelect('processor_id', 'contact_id', 'currency', 'installments')
       ->addWhere('id', '=', $recurId)
       ->setLimit(1)
       ->execute()
       ->first();
+
+    // Mollie does not support changing the number of installments on an
+    // existing subscription. Block the update if installments changed.
+    $newInstallments = $params['installments'] ?? NULL;
+    if (($newInstallments ?? NULL) != ($recur['installments'] ?? NULL)) {
+      throw new PaymentProcessorException(E::ts('The number of installments cannot be changed on a Mollie subscription. Cancel this subscription and create a new one instead.'));
+    }
 
     if (empty($recur['processor_id'])) {
       throw new PaymentProcessorException(E::ts('No Mollie subscription ID found for this recurring contribution.'));
