@@ -78,6 +78,10 @@ class WebhookTestableMolliePayment extends \CRM_Core_Payment_Mollie {
     $this->calledMethods[] = 'handleChargeback';
   }
 
+  protected function handleRefund(array $contribution, Payment $molliePayment): void {
+    $this->calledMethods[] = 'handleRefund';
+  }
+
   protected function createRecurringInstallment(array $contributionRecur, Payment $molliePayment): void {
     $this->calledMethods[] = 'createRecurringInstallment';
   }
@@ -104,10 +108,15 @@ class MollieWebhookTest extends TestCase {
     // isPaid() checks paidAt, not status.
     $payment->paidAt = ($props['status'] ?? 'paid') === 'paid' ? '2026-03-06T12:00:00+00:00' : NULL;
 
-    // hasChargebacks() checks _links->chargebacks.
+    // hasChargebacks() and hasRefunds() check _links->chargebacks / _links->refunds.
+    $links = new \stdClass();
     if ($props['hasChargebacks'] ?? FALSE) {
-      $links = new \stdClass();
       $links->chargebacks = new \stdClass();
+    }
+    if ($props['hasRefunds'] ?? FALSE) {
+      $links->refunds = new \stdClass();
+    }
+    if ($props['hasChargebacks'] ?? $props['hasRefunds'] ?? FALSE) {
       $payment->_links = $links;
     }
 
@@ -212,6 +221,40 @@ class MollieWebhookTest extends TestCase {
     $this->assertSame(['handleChargeback'], $processor->calledMethods);
   }
 
+  public function testRefundHandledBeforeIdempotency(): void {
+    $processor = new WebhookTestableMolliePayment();
+    // Contribution is already Completed — idempotency would normally skip.
+    $contribution = $this->makePendingContribution();
+    $contribution['contribution_status_id:name'] = 'Completed';
+    $processor->stubbedContribution = $contribution;
+
+    $payment = $this->makePayment([
+      'status' => 'paid',
+      'hasRefunds' => TRUE,
+    ]);
+    $processor->exposedProcessOneOffOrFirstPaymentWebhook($payment);
+
+    // Refund is processed even though contribution is already Completed.
+    $this->assertSame(['handleRefund'], $processor->calledMethods);
+  }
+
+  public function testChargebackTakesPriorityOverRefund(): void {
+    $processor = new WebhookTestableMolliePayment();
+    $contribution = $this->makePendingContribution();
+    $contribution['contribution_status_id:name'] = 'Completed';
+    $processor->stubbedContribution = $contribution;
+
+    $payment = $this->makePayment([
+      'status' => 'paid',
+      'hasChargebacks' => TRUE,
+      'hasRefunds' => TRUE,
+    ]);
+    $processor->exposedProcessOneOffOrFirstPaymentWebhook($payment);
+
+    // Chargeback check comes first, so it wins when both are present.
+    $this->assertSame(['handleChargeback'], $processor->calledMethods);
+  }
+
   public function testIdempotencySkipsAlreadyCompleted(): void {
     $processor = new WebhookTestableMolliePayment();
     $contribution = $this->makePendingContribution();
@@ -281,6 +324,20 @@ class MollieWebhookTest extends TestCase {
     $processor->exposedProcessRecurringPaymentWebhook($payment);
 
     $this->assertSame(['handleChargeback'], $processor->calledMethods);
+  }
+
+  public function testRecurringRefundOnExisting(): void {
+    $processor = new WebhookTestableMolliePayment();
+    $processor->stubbedContribution = $this->makePendingContribution();
+
+    $payment = $this->makePayment([
+      'status' => 'paid',
+      'subscriptionId' => 'sub_test',
+      'hasRefunds' => TRUE,
+    ]);
+    $processor->exposedProcessRecurringPaymentWebhook($payment);
+
+    $this->assertSame(['handleRefund'], $processor->calledMethods);
   }
 
   public function testRecurringUnknownSubscriptionSkips(): void {

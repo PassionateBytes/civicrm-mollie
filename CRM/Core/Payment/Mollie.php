@@ -476,6 +476,14 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       return;
     }
 
+    // Refunds: Mollie re-sends the same payment ID webhook when a refund
+    // reaches processing/refunded/failed. The payment stays "paid" but gains
+    // refund data. Must be checked before the idempotency skip.
+    if ($molliePayment->isPaid() && $molliePayment->hasRefunds()) {
+      $this->handleRefund($contribution, $molliePayment);
+      return;
+    }
+
     // Idempotency: skip if already completed.
     if ($contribution['contribution_status_id:name'] === 'Completed') {
       $this->logDebug("Contribution #{$contribution['id']} already completed, skipping (mollie: {$molliePayment->id})", [
@@ -519,6 +527,12 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     $existing = $this->findContributionByTrxnId($molliePayment->id);
     if ($existing !== NULL && $molliePayment->isPaid() && $molliePayment->hasChargebacks()) {
       $this->handleChargeback($existing, $molliePayment);
+      return;
+    }
+
+    // Refunds on recurring installments — same logic as one-off payments.
+    if ($existing !== NULL && $molliePayment->isPaid() && $molliePayment->hasRefunds()) {
+      $this->handleRefund($existing, $molliePayment);
       return;
     }
 
@@ -820,6 +834,128 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     }
     catch (\Exception $e) {
       $this->logError("Failed to create chargeback note for Contribution #{$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_id' => $contribution['id'],
+        'error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Handle a refund on a payment.
+   *
+   * Mollie re-sends the payment webhook when a refund reaches processing,
+   * refunded, or failed. The payment stays "paid" but gains refund data.
+   * We mark the CiviCRM contribution with the Refunded status and log
+   * full details for staff.
+   *
+   * @param array $contribution
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   */
+  protected function handleRefund(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
+    // Already marked as refunded — nothing to do.
+    if ($contribution['contribution_status_id:name'] === 'Refunded') {
+      $this->logDebug("Contribution #{$contribution['id']} already marked as Refunded, skipping (mollie: {$molliePayment->id})", [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_id' => $contribution['id'],
+      ]);
+      return;
+    }
+
+    try {
+      $refundedAmount = $molliePayment->amountRefunded !== NULL
+        ? $molliePayment->amountRefunded->value
+        : 'unknown';
+      $currency = $molliePayment->amountRefunded !== NULL
+        ? ($molliePayment->amountRefunded->currency ?? 'EUR')
+        : ($molliePayment->amount->currency ?? 'EUR');
+
+      \Civi\Api4\Contribution::update(FALSE)
+        ->addWhere('id', '=', $contribution['id'])
+        ->addValue('contribution_status_id:name', 'Refunded')
+        ->addValue('cancel_date', date('Y-m-d H:i:s'))
+        ->execute();
+
+      // Fetch refund details from Mollie for the paper trail.
+      $this->recordRefundNote($contribution, $molliePayment, $refundedAmount, $currency);
+
+      $originalAmount = $molliePayment->amount->value ?? 'unknown';
+      $this->logWarning("Refund received on Contribution #{$contribution['id']}: {$refundedAmount} of {$originalAmount} {$currency} (mollie: {$molliePayment->id})", [
+        'contribution_id' => $contribution['id'],
+        'mollie_payment_id' => $molliePayment->id,
+        'refunded_amount' => $refundedAmount,
+        'original_amount' => $originalAmount,
+      ]);
+    }
+    catch (\Exception $e) {
+      $this->logError("Failed to process refund on Contribution #{$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_id' => $contribution['id'],
+        'error' => $e->getMessage(),
+      ]);
+    }
+  }
+
+  /**
+   * Attach a Note to the contribution with refund details from Mollie.
+   *
+   * Fetches refund records from Mollie's API and records the amount,
+   * date, status, and description as a CiviCRM Note on the contribution
+   * for staff reference.
+   *
+   * @param array $contribution
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   * @param string $refundedAmount
+   * @param string $currency
+   */
+  protected function recordRefundNote(
+    array $contribution,
+    \Mollie\Api\Resources\Payment $molliePayment,
+    string $refundedAmount,
+    string $currency,
+  ): void {
+    $lines = [
+      E::ts('A refund was issued on this contribution.'),
+      '',
+      E::ts('Total refunded: %1 %2', [1 => $refundedAmount, 2 => $currency]),
+      E::ts('Original amount: %1 %2', [1 => $molliePayment->amount->value, 2 => $currency]),
+      E::ts('Mollie payment ID: %1', [1 => $molliePayment->id]),
+    ];
+
+    if ($molliePayment->amountRemaining !== NULL) {
+      $lines[] = E::ts('Remaining: %1 %2', [1 => $molliePayment->amountRemaining->value, 2 => $currency]);
+    }
+
+    try {
+      $refunds = $molliePayment->refunds();
+      foreach ($refunds as $refund) {
+        $lines[] = '';
+        $lines[] = E::ts('Refund ID: %1', [1 => $refund->id]);
+        $lines[] = E::ts('Amount: %1 %2', [1 => $refund->amount->value, 2 => $refund->amount->currency]);
+        $lines[] = E::ts('Status: %1', [1 => $refund->status]);
+        $lines[] = E::ts('Date: %1', [1 => $refund->createdAt ?? 'unknown']);
+
+        if ($refund->description !== NULL) {
+          $lines[] = E::ts('Description: %1', [1 => $refund->description]);
+        }
+      }
+    }
+    catch (\Exception $e) {
+      $lines[] = '';
+      $lines[] = E::ts('(Could not fetch refund details from Mollie: %1)', [1 => $e->getMessage()]);
+    }
+
+    try {
+      \Civi\Api4\Note::create(FALSE)
+        ->addValue('entity_table', 'civicrm_contribution')
+        ->addValue('entity_id', $contribution['id'])
+        ->addValue('subject', E::ts('Mollie Refund'))
+        ->addValue('note', implode("\n", $lines))
+        ->addValue('contact_id', $contribution['contact_id'])
+        ->execute();
+    }
+    catch (\Exception $e) {
+      $this->logError("Failed to create refund note for Contribution #{$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
         'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $contribution['id'],
         'error' => $e->getMessage(),
