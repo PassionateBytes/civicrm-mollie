@@ -105,6 +105,8 @@ An admin dashboard is available at **Administer > CiviContribute > Mollie Paymen
 - **Subscriptions** — active recurring contributions with Mollie subscription status, next charge date, and mandate type
 - **Customers** — Mollie customer mappings to CiviCRM contacts
 
+Clicking a row opens a detail modal that fetches live data from the Mollie API, showing the full resource (payment, subscription, customer, mandate, refund, etc.) with navigation between related resources.
+
 ## Scheduled Jobs
 
 The extension registers two scheduled jobs that run daily. Verify they are enabled under **Administer > System Settings > Scheduled Jobs**.
@@ -150,6 +152,10 @@ Mollie cannot reach the webhook URL. Verify that your CiviCRM instance is public
 ### Recurring contributions fail on the second charge
 
 SEPA Direct Debit is likely not enabled in your Mollie account. iDEAL-based recurring contributions use SEPA DD for subsequent charges. Enable it in your Mollie dashboard.
+
+### Unmatched webhook payments
+
+If a Mollie webhook arrives for a payment that cannot be matched to a CiviCRM contribution or recurring contribution, the extension creates an "Unmatched Mollie Payment" activity with details from the Mollie payment object. Check **Activities** for these if you suspect missed or orphaned payments.
 
 ### Debug logging
 
