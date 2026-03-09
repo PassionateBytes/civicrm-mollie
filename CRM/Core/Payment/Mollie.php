@@ -1032,9 +1032,12 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     $customerId = $molliePayment->customerId;
 
     try {
-      $mandateId = $this->verifyMandate($customerId);
+      // The payment object carries the mandateId that Mollie created from
+      // this first payment. Using it directly is more precise than listing
+      // all mandates (which could return a different one) and saves an API call.
+      $mandateId = $molliePayment->mandateId;
       if ($mandateId === NULL) {
-        $this->logError("No valid mandate found for customer {$customerId} after first recurring payment (mollie: {$molliePayment->id}, Contribution #{$contribution['id']})", [
+        $this->logError("No mandate ID on first recurring payment for customer {$customerId} (mollie: {$molliePayment->id}, Contribution #{$contribution['id']})", [
           'mollie_payment_id' => $molliePayment->id,
           'contribution_id' => $contribution['id'],
           'mollie_customer_id' => $customerId,
@@ -1328,36 +1331,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     ]);
 
     return $mollieCustomer->id;
-  }
-
-  /**
-   * Verify that a valid mandate exists for a Mollie customer.
-   *
-   * @param string $customerId
-   *
-   * @return string|null
-   *   The mandate ID if valid, null otherwise.
-   */
-  protected function verifyMandate(string $customerId): ?string {
-    try {
-      $mandates = $this->getMollieApiClient()->mandates->listForId($customerId);
-      // Accept both valid and pending mandates. SEPA mandates from iDEAL
-      // can briefly be "pending" before transitioning to "valid".
-      // Mollie allows subscription creation with pending mandates.
-      foreach ($mandates as $mandate) {
-        if ($mandate->isValid() || $mandate->isPending()) {
-          return $mandate->id;
-        }
-      }
-    }
-    catch (\Mollie\Api\Exceptions\ApiException $e) {
-      $this->logError("Failed to verify mandate for customer {$customerId}: {$e->getMessage()}", [
-        'mollie_customer_id' => $customerId,
-        'error' => $e->getMessage(),
-      ]);
-    }
-
-    return NULL;
   }
 
   /**
