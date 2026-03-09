@@ -35,9 +35,9 @@ class Run extends AbstractAction {
 
     $activeRecurs = ContributionRecur::get(FALSE)
       ->addSelect('id', 'contact_id', 'amount', 'currency', 'frequency_interval', 'frequency_unit', 'next_sched_contribution_date')
-      ->addWhere('processor_id', 'IS NOT NULL')
-      ->addWhere('processor_id', '!=', '')
+      ->addWhere('processor_id', 'LIKE', 'sub_%')
       ->addWhere('contribution_status_id:name', 'IN', ['In Progress', 'Pending'])
+      ->addWhere('is_test', 'IN', [0, 1])
       ->addWhere('next_sched_contribution_date', '>=', $windowStart->format('Y-m-d'))
       ->addWhere('next_sched_contribution_date', '<=', $windowEnd->format('Y-m-d 23:59:59'))
       ->addJoin('PaymentProcessorType AS ppt', 'INNER',

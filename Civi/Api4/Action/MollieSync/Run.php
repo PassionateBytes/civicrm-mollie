@@ -59,9 +59,9 @@ class Run extends AbstractAction {
       ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id',
         'contribution_status_id:name', 'next_sched_contribution_date', 'amount',
         'currency', 'end_date', 'cancel_date')
-      ->addWhere('processor_id', 'IS NOT NULL')
-      ->addWhere('processor_id', '!=', '')
+      ->addWhere('processor_id', 'LIKE', 'sub_%')
       ->addWhere('contribution_status_id:name', 'IN', ['In Progress', 'Pending'])
+      ->addWhere('is_test', 'IN', [0, 1])
       ->addJoin('PaymentProcessorType AS ppt', 'INNER',
         ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
         ['ppt.name', '=', '"mollie"']
@@ -192,9 +192,9 @@ class Run extends AbstractAction {
   protected function retryCancellations(array &$stats): void {
     $cancelledRecurs = ContributionRecur::get(FALSE)
       ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id')
-      ->addWhere('processor_id', 'IS NOT NULL')
-      ->addWhere('processor_id', '!=', '')
+      ->addWhere('processor_id', 'LIKE', 'sub_%')
       ->addWhere('contribution_status_id:name', '=', 'Cancelled')
+      ->addWhere('is_test', 'IN', [0, 1])
       ->addJoin('PaymentProcessorType AS ppt', 'INNER',
         ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
         ['ppt.name', '=', '"mollie"']
