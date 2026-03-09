@@ -440,11 +440,31 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       'subscription_id' => $subscriptionId,
     ]);
 
+    // Post-payment events (chargebacks, refunds): Mollie re-sends the same
+    // payment ID webhook when a chargeback or refund occurs. The payment
+    // stays "paid" but gains chargeback/refund data. These events are
+    // orthogonal to whether the payment is one-off or recurring, so we
+    // handle them here before routing. Must be checked before idempotency
+    // skips in the per-type handlers.
+    $existingContribution = $this->findContributionByTrxnId($molliePayment->id);
+    if ($existingContribution !== NULL && $molliePayment->isPaid()) {
+      if ($molliePayment->hasChargebacks()) {
+        $this->handleChargeback($existingContribution, $molliePayment);
+        http_response_code(200);
+        return;
+      }
+      if ($molliePayment->hasRefunds()) {
+        $this->handleRefund($existingContribution, $molliePayment);
+        http_response_code(200);
+        return;
+      }
+    }
+
     if (!empty($molliePayment->subscriptionId)) {
-      $this->processRecurringPaymentWebhook($molliePayment);
+      $this->processRecurringPaymentWebhook($molliePayment, $existingContribution);
     }
     else {
-      $this->processOneOffOrFirstPaymentWebhook($molliePayment);
+      $this->processOneOffOrFirstPaymentWebhook($molliePayment, $existingContribution);
     }
 
     http_response_code(200);
@@ -454,9 +474,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * Process a webhook for a one-off payment or the first payment of a recurring series.
    *
    * @param \Mollie\Api\Resources\Payment $molliePayment
+   * @param array|null $contribution
+   *   Existing contribution looked up by trxn_id, or NULL if not found.
    */
-  protected function processOneOffOrFirstPaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment): void {
-    $contribution = $this->findContributionByTrxnId($molliePayment->id);
+  protected function processOneOffOrFirstPaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment, ?array $contribution = NULL): void {
     if ($contribution === NULL) {
       $this->logWarning("Webhook for unknown Contribution (mollie: {$molliePayment->id})", [
         'mollie_payment_id' => $molliePayment->id,
@@ -465,22 +486,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'No contribution found with trxn_id %1. The contribution may have been deleted or the database restored from a backup.',
         [1 => $molliePayment->id]
       ));
-      return;
-    }
-
-    // Chargebacks: Mollie re-sends the same payment ID webhook when a
-    // chargeback is filed. The payment stays "paid" but gains chargeback data.
-    // Must be checked before the idempotency skip.
-    if ($molliePayment->isPaid() && $molliePayment->hasChargebacks()) {
-      $this->handleChargeback($contribution, $molliePayment);
-      return;
-    }
-
-    // Refunds: Mollie re-sends the same payment ID webhook when a refund
-    // reaches processing/refunded/failed. The payment stays "paid" but gains
-    // refund data. Must be checked before the idempotency skip.
-    if ($molliePayment->isPaid() && $molliePayment->hasRefunds()) {
-      $this->handleRefund($contribution, $molliePayment);
       return;
     }
 
@@ -519,28 +524,17 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * Each triggers a webhook that we use to create a CiviCRM contribution.
    *
    * @param \Mollie\Api\Resources\Payment $molliePayment
+   * @param array|null $existingContribution
+   *   Existing contribution looked up by trxn_id, or NULL if this is a new payment.
    */
-  protected function processRecurringPaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment): void {
+  protected function processRecurringPaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment, ?array $existingContribution = NULL): void {
     $subscriptionId = $molliePayment->subscriptionId;
 
-    // Chargebacks on recurring installments — same logic as one-off payments.
-    $existing = $this->findContributionByTrxnId($molliePayment->id);
-    if ($existing !== NULL && $molliePayment->isPaid() && $molliePayment->hasChargebacks()) {
-      $this->handleChargeback($existing, $molliePayment);
-      return;
-    }
-
-    // Refunds on recurring installments — same logic as one-off payments.
-    if ($existing !== NULL && $molliePayment->isPaid() && $molliePayment->hasRefunds()) {
-      $this->handleRefund($existing, $molliePayment);
-      return;
-    }
-
     // Idempotency: skip if we already recorded this payment.
-    if ($existing !== NULL) {
-      $this->logDebug("Recurring payment {$molliePayment->id} already recorded as Contribution #{$existing['id']}, skipping", [
+    if ($existingContribution !== NULL) {
+      $this->logDebug("Recurring payment {$molliePayment->id} already recorded as Contribution #{$existingContribution['id']}, skipping", [
         'mollie_payment_id' => $molliePayment->id,
-        'contribution_id' => $existing['id'],
+        'contribution_id' => $existingContribution['id'],
       ]);
       return;
     }
