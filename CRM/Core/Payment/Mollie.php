@@ -399,8 +399,37 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       $this->logError("Failed to fetch Mollie payment {$paymentId} in webhook: {$e->getMessage()}", [
         'mollie_payment_id' => $paymentId,
         'error' => $e->getMessage(),
+        'http_code' => $e->getCode(),
       ]);
-      http_response_code(500);
+
+      // Mollie docs require HTTP 200 for all webhook responses except when a
+      // retry would be useful. Since Mollie itself sent us this payment ID,
+      // a fetch failure is abnormal. We classify by Mollie's documented error
+      // codes (see https://docs.mollie.com/reference/handling-errors):
+      //
+      // Transient (return 500 → Mollie retries up to 10× over 26 hours):
+      //   0   - network/connection failure (SDK could not reach Mollie)
+      //   429 - rate limited; retry after backoff
+      //   500 - Mollie internal server error
+      //   502 - Mollie bad gateway / maintenance
+      //   503 - Mollie service unavailable
+      //   504 - Mollie gateway timeout
+      //
+      // Permanent (return 200 → stop retries, requires admin intervention):
+      //   401 - invalid or revoked API key
+      //   403 - API key lacks access to this resource
+      //   404 - payment does not exist on this API key (test/live mismatch)
+      //   410 - payment was previously deleted
+      //   422 - unprocessable entity
+      //
+      // Codes like 400, 405, 409, 415 should not occur for a simple GET-by-ID
+      // but are equally permanent, so they fall through to the default (200).
+      $httpCode = $e->getCode();
+      $isTransient = match ($httpCode) {
+        0, 429, 500, 502, 503, 504 => TRUE,
+        default => FALSE,
+      };
+      http_response_code($isTransient ? 500 : 200);
       return;
     }
 
