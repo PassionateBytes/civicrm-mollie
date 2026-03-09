@@ -21,7 +21,7 @@
         {/if}
         {if $pagination.next}
           <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=`$pagination.next`"}" class="open-inline-noreturn button">
-            <span>{ts domain="nl.stichtinggast.mollie"}Next{/ts} <i class="crm-i fa-chevron-right"></i></span>
+            <span><i class="crm-i fa-chevron-right"></i> {ts domain="nl.stichtinggast.mollie"}Next{/ts}</span>
           </a>
         {/if}
       </div>
