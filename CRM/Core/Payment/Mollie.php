@@ -515,6 +515,13 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         $this->failContributionRecur($contribution['contribution_recur_id'], $molliePayment);
       }
     }
+    else {
+      $this->logInfo("Webhook for Contribution #{$contribution['id']} has unhandled Mollie status '{$molliePayment->status}', no action taken (mollie: {$molliePayment->id})", [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_id' => $contribution['id'],
+        'mollie_status' => $molliePayment->status,
+      ]);
+    }
   }
 
   /**
@@ -557,6 +564,14 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     }
     elseif ($molliePayment->isFailed() || $molliePayment->isExpired() || $molliePayment->isCanceled()) {
       $this->recordFailedRecurringInstallment($contributionRecur, $molliePayment);
+    }
+    else {
+      $this->logInfo("Recurring webhook for ContributionRecur #{$contributionRecur['id']} has unhandled Mollie status '{$molliePayment->status}', no action taken (mollie: {$molliePayment->id})", [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_recur_id' => $contributionRecur['id'],
+        'subscription_id' => $subscriptionId,
+        'mollie_status' => $molliePayment->status,
+      ]);
     }
   }
 
