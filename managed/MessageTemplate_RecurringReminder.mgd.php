@@ -25,7 +25,7 @@ $html = <<<'HTML'
   <!-- Intro -->
   <tr>
     <td style="font-family:Arial,Verdana,sans-serif; padding-bottom:20px;">
-      {ts domain="nl.stichtinggast.mollie"}This is a courtesy reminder that your recurring donation will be charged soon. Below are the details of your upcoming payment.{/ts}
+      {ts}This is a courtesy reminder that your recurring donation will be charged soon. Below are the details of your upcoming payment.{/ts}
     </td>
   </tr>
 
@@ -33,7 +33,7 @@ $html = <<<'HTML'
   <tr>
     <td style="font-family:Arial,Verdana,sans-serif; font-size:14px; font-weight:bold;
                color:#333333; padding-bottom:8px;">
-      {ts domain="nl.stichtinggast.mollie"}Payment details{/ts}
+      {ts}Payment details{/ts}
     </td>
   </tr>
   <tr>
@@ -43,21 +43,21 @@ $html = <<<'HTML'
                     border:1px solid #dddddd; border-radius:4px;">
         <tr>
           <td style="padding:10px 16px; width:160px; color:#888888; border-bottom:1px solid #dddddd;
-                     border-right:1px solid #dddddd;">{ts domain="nl.stichtinggast.mollie"}Amount{/ts}</td>
+                     border-right:1px solid #dddddd;">{ts}Amount{/ts}</td>
           <td style="padding:10px 16px; border-bottom:1px solid #dddddd;">
-            {contribution_recur.amount} {contribution_recur.currency}
+            {contribution_recur.amount}
           </td>
         </tr>
         <tr>
           <td style="padding:10px 16px; color:#888888; border-bottom:1px solid #dddddd;
-                     border-right:1px solid #dddddd;">{ts domain="nl.stichtinggast.mollie"}Frequency{/ts}</td>
+                     border-right:1px solid #dddddd;">{ts}Frequency{/ts}</td>
           <td style="padding:10px 16px; border-bottom:1px solid #dddddd;">
-            {ts domain="nl.stichtinggast.mollie" 1="{contribution_recur.frequency_interval}" 2="{contribution_recur.frequency_unit}"}Every %1 %2{/ts}
+            {capture assign=freq_interval}{contribution_recur.frequency_interval}{/capture}{capture assign=freq_unit}{contribution_recur.frequency_unit}{/capture}{if $freq_interval == 1}{ts}Every{/ts} {$freq_unit}{else}{ts}Every{/ts} {$freq_interval} {$freq_unit}{/if}
           </td>
         </tr>
         <tr>
           <td style="padding:10px 16px; color:#888888;
-                     border-right:1px solid #dddddd;">{ts domain="nl.stichtinggast.mollie"}Next Charge Date{/ts}</td>
+                     border-right:1px solid #dddddd;">{ts}Next Charge Date{/ts}</td>
           <td style="padding:10px 16px;">
             {contribution_recur.next_sched_contribution_date}
           </td>
@@ -69,19 +69,19 @@ $html = <<<'HTML'
   <!-- Questions -->
   <tr>
     <td style="font-family:Arial,Verdana,sans-serif; padding-bottom:20px;">
-      {ts domain="nl.stichtinggast.mollie"}If you wish to modify or cancel your recurring donation, please contact us.{/ts}
+      {ts}If you wish to modify or cancel your recurring donation, please contact us.{/ts}
     </td>
   </tr>
 
   <!-- Closing -->
   <tr>
     <td style="font-family:Arial,Verdana,sans-serif; padding-bottom:12px;">
-      {ts domain="nl.stichtinggast.mollie"}Thank you for your continued support.{/ts}
+      {ts}Thank you for your continued support.{/ts}
     </td>
   </tr>
   <tr>
     <td style="font-family:Arial,Verdana,sans-serif;">
-      {ts domain="nl.stichtinggast.mollie"}Kind regards,{/ts}<br />
+      {ts}Kind regards,{/ts}<br />
       {domain.name}
     </td>
   </tr>
@@ -95,19 +95,19 @@ HTML;
 $text = <<<'TEXT'
 {contact.email_greeting_display},
 
-{ts domain="nl.stichtinggast.mollie"}This is a courtesy reminder that your recurring donation will be charged soon. Below are the details of your upcoming payment.{/ts}
+{ts}This is a courtesy reminder that your recurring donation will be charged soon. Below are the details of your upcoming payment.{/ts}
 
-{ts domain="nl.stichtinggast.mollie"}Payment details{/ts}
+{ts}Payment details{/ts}
 ---
-{ts domain="nl.stichtinggast.mollie"}Amount{/ts}: {contribution_recur.amount} {contribution_recur.currency}
-{ts domain="nl.stichtinggast.mollie"}Frequency{/ts}: {ts domain="nl.stichtinggast.mollie" 1="{contribution_recur.frequency_interval}" 2="{contribution_recur.frequency_unit}"}Every %1 %2{/ts}
-{ts domain="nl.stichtinggast.mollie"}Next Charge Date{/ts}: {contribution_recur.next_sched_contribution_date}
+{ts}Amount{/ts}: {contribution_recur.amount}
+{ts}Frequency{/ts}: {capture assign=freq_interval}{contribution_recur.frequency_interval}{/capture}{capture assign=freq_unit}{contribution_recur.frequency_unit}{/capture}{if $freq_interval == 1}{ts}Every{/ts} {$freq_unit}{else}{ts}Every{/ts} {$freq_interval} {$freq_unit}{/if}
+{ts}Next Charge Date{/ts}: {contribution_recur.next_sched_contribution_date}
 
-{ts domain="nl.stichtinggast.mollie"}If you wish to modify or cancel your recurring donation, please contact us.{/ts}
+{ts}If you wish to modify or cancel your recurring donation, please contact us.{/ts}
 
-{ts domain="nl.stichtinggast.mollie"}Thank you for your continued support.{/ts}
+{ts}Thank you for your continued support.{/ts}
 
-{ts domain="nl.stichtinggast.mollie"}Kind regards,{/ts}
+{ts}Kind regards,{/ts}
 {domain.name}
 TEXT;
 

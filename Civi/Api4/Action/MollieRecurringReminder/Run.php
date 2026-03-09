@@ -106,11 +106,14 @@ class Run extends AbstractAction {
       ],
     ]);
 
-    [$sent, , , , $errorMsg] = $message->sendTemplate([
+    $result = $message->sendTemplate([
       'contactId' => $recur['contact_id'],
       'toEmail' => $contact['email_primary.email'],
       'toName' => $contact['display_name'] ?? '',
     ]);
+
+    $sent = $result[0] ?? FALSE;
+    $errorMsg = $result[4] ?? NULL;
 
     if (!$sent) {
       throw new \RuntimeException('Failed to send reminder email: ' . ($errorMsg ?? 'unknown error'));
