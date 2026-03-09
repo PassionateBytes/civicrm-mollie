@@ -213,7 +213,7 @@ class Run extends AbstractAction {
           fn() => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id'])
         );
 
-        if (!in_array($subscription->status, ['active', 'pending'], TRUE)) {
+        if (!in_array($subscription->status, ['active', 'pending', 'suspended'], TRUE)) {
           continue;
         }
 
