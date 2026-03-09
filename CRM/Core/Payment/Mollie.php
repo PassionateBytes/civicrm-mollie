@@ -1139,9 +1139,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ],
     ];
 
-    if (!empty($recur['next_sched_contribution_date'])) {
-      $subscriptionParams['startDate'] = date('Y-m-d', strtotime($recur['next_sched_contribution_date']));
-    }
+    $subscriptionParams['startDate'] = $this->computeSubscriptionStartDate($recur);
 
     // Subtract 1 from installments since the first payment was already made.
     if (!empty($recur['installments']) && $recur['installments'] > 1) {
@@ -1433,6 +1431,29 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         E::ts('Unsupported recurring frequency: %1', [1 => $frequencyUnit])
       ),
     };
+  }
+
+  /**
+   * Compute the subscription start date from a ContributionRecur.
+   *
+   * Uses the scheduled next contribution date if available, otherwise
+   * falls back to today + one billing interval to avoid charging on the
+   * same day as the first payment.
+   *
+   * @param array $recur
+   *
+   * @return string
+   *   Start date in Y-m-d format.
+   */
+  protected function computeSubscriptionStartDate(array $recur): string {
+    if (!empty($recur['next_sched_contribution_date'])) {
+      return date('Y-m-d', strtotime($recur['next_sched_contribution_date']));
+    }
+
+    $interval = $recur['frequency_interval'] ?? 1;
+    $unit = $recur['frequency_unit'] ?? 'month';
+
+    return date('Y-m-d', strtotime("+{$interval} {$unit}"));
   }
 
   /**

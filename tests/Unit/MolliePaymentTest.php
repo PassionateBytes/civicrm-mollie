@@ -32,6 +32,10 @@ class TestableMolliePayment extends \CRM_Core_Payment_Mollie {
   public function exposedBuildCancelReason(Payment $molliePayment): string {
     return $this->buildCancelReason($molliePayment);
   }
+
+  public function exposedComputeSubscriptionStartDate(array $recur): string {
+    return $this->computeSubscriptionStartDate($recur);
+  }
 }
 
 class MolliePaymentTest extends TestCase {
@@ -112,6 +116,50 @@ class MolliePaymentTest extends TestCase {
   public function testCalculateNextDateEmptyArray(): void {
     $payment = new TestableMolliePayment();
     $this->assertNull($payment->exposedCalculateNextScheduledDate([]));
+  }
+
+  // -----------------------------------------------------------------------
+  // computeSubscriptionStartDate
+  // -----------------------------------------------------------------------
+
+  public function testStartDateFromScheduledDate(): void {
+    $payment = new TestableMolliePayment();
+    $result = $payment->exposedComputeSubscriptionStartDate([
+      'next_sched_contribution_date' => '2026-04-15 00:00:00',
+      'frequency_interval' => 1,
+      'frequency_unit' => 'month',
+    ]);
+    $this->assertSame('2026-04-15', $result);
+  }
+
+  public function testStartDateFallbackMonthly(): void {
+    $payment = new TestableMolliePayment();
+    $result = $payment->exposedComputeSubscriptionStartDate([
+      'frequency_interval' => 1,
+      'frequency_unit' => 'month',
+    ]);
+    $expected = date('Y-m-d', strtotime('+1 month'));
+    $this->assertSame($expected, $result);
+  }
+
+  public function testStartDateFallbackQuarterly(): void {
+    $payment = new TestableMolliePayment();
+    $result = $payment->exposedComputeSubscriptionStartDate([
+      'frequency_interval' => 3,
+      'frequency_unit' => 'month',
+    ]);
+    $expected = date('Y-m-d', strtotime('+3 month'));
+    $this->assertSame($expected, $result);
+  }
+
+  public function testStartDateFallbackYearly(): void {
+    $payment = new TestableMolliePayment();
+    $result = $payment->exposedComputeSubscriptionStartDate([
+      'frequency_interval' => 1,
+      'frequency_unit' => 'year',
+    ]);
+    $expected = date('Y-m-d', strtotime('+1 year'));
+    $this->assertSame($expected, $result);
   }
 
   // -----------------------------------------------------------------------
