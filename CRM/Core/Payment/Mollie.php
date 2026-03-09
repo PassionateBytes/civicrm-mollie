@@ -714,247 +714,289 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   }
 
   /**
-   * Handle a chargeback on a payment.
+   * Handle chargebacks on a payment.
    *
    * Mollie re-sends the payment webhook when a chargeback is filed. The
-   * payment stays "paid" but gains chargeback data. We mark the CiviCRM
-   * contribution with the Chargeback status and log full details for staff.
+   * payment stays "paid" but gains chargeback data. Each chargeback is
+   * recorded as a negative payment via Payment.create for proper financial
+   * bookkeeping. CiviCRM handles partial vs full status transitions
+   * automatically, then we override to Chargeback status. A Note is
+   * created for each new chargeback for staff reference.
+   *
+   * Idempotency is per-chargeback: each chargeback's Mollie ID is used
+   * as trxn_id on the FinancialTrxn, so duplicates are skipped.
    *
    * @param array $contribution
    * @param \Mollie\Api\Resources\Payment $molliePayment
    */
   protected function handleChargeback(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
-    // Already marked as chargeback — nothing to do.
-    if ($contribution['contribution_status_id:name'] === 'Chargeback') {
-      $this->logDebug("Contribution #{$contribution['id']} already marked as Chargeback, skipping (mollie: {$molliePayment->id})", [
-        'mollie_payment_id' => $molliePayment->id,
-        'contribution_id' => $contribution['id'],
-      ]);
-      return;
-    }
-
     try {
-      $chargebackAmount = $molliePayment->amountChargedBack !== NULL
-        ? $molliePayment->amountChargedBack->value
-        : 'unknown';
-      $currency = $molliePayment->amountChargedBack !== NULL
-        ? ($molliePayment->amountChargedBack->currency ?? 'EUR')
-        : ($molliePayment->amount->currency ?? 'EUR');
-
-      \Civi\Api4\Contribution::update(FALSE)
-        ->addWhere('id', '=', $contribution['id'])
-        ->addValue('contribution_status_id:name', 'Chargeback')
-        ->addValue('cancel_date', date('Y-m-d H:i:s'))
-        ->execute();
-
-      // Fetch chargeback details from Mollie for the paper trail.
-      $this->recordChargebackNote($contribution, $molliePayment, $chargebackAmount, $currency);
-
-      $originalAmount = $molliePayment->amount->value ?? 'unknown';
-      $this->logWarning("Chargeback received on Contribution #{$contribution['id']}: {$chargebackAmount} of {$originalAmount} {$currency} (mollie: {$molliePayment->id})", [
-        'contribution_id' => $contribution['id'],
-        'mollie_payment_id' => $molliePayment->id,
-        'chargeback_amount' => $chargebackAmount,
-        'original_amount' => $originalAmount,
-      ]);
+      $chargebacks = $molliePayment->chargebacks();
     }
     catch (\Exception $e) {
-      $this->logError("Failed to process chargeback on Contribution #{$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+      $this->logError("Failed to fetch chargebacks for Contribution #{$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
         'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $contribution['id'],
         'error' => $e->getMessage(),
       ]);
+      return;
+    }
+
+    $recorded = 0;
+    foreach ($chargebacks as $chargeback) {
+      if ($this->financialTrxnExists($chargeback->id)) {
+        continue;
+      }
+
+      try {
+        $amount = $chargeback->amount->value;
+        $currency = $chargeback->amount->currency ?? 'EUR';
+
+        civicrm_api3('Payment', 'create', [
+          'contribution_id' => $contribution['id'],
+          'total_amount' => -$amount,
+          'trxn_id' => $chargeback->id,
+          'trxn_date' => $chargeback->createdAt ?? date('Y-m-d H:i:s'),
+          'payment_processor_id' => $this->_paymentProcessor['id'],
+        ]);
+
+        $this->recordChargebackNote($contribution, $molliePayment, $chargeback);
+        $recorded++;
+
+        $this->logWarning("Chargeback {$chargeback->id} recorded on Contribution #{$contribution['id']}: -{$amount} {$currency} (mollie: {$molliePayment->id})", [
+          'contribution_id' => $contribution['id'],
+          'mollie_payment_id' => $molliePayment->id,
+          'chargeback_id' => $chargeback->id,
+          'chargeback_amount' => $amount,
+        ]);
+      }
+      catch (\Exception $e) {
+        $this->logError("Failed to record chargeback {$chargeback->id} on Contribution #{$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+          'mollie_payment_id' => $molliePayment->id,
+          'contribution_id' => $contribution['id'],
+          'chargeback_id' => $chargeback->id,
+          'error' => $e->getMessage(),
+        ]);
+      }
+    }
+
+    // Payment.create sets status to Refunded/Partially paid, but chargebacks
+    // are bank-initiated disputes — override to Chargeback for correct
+    // business semantics.
+    if ($recorded > 0) {
+      try {
+        \Civi\Api4\Contribution::update(FALSE)
+          ->addWhere('id', '=', $contribution['id'])
+          ->addValue('contribution_status_id:name', 'Chargeback')
+          ->execute();
+      }
+      catch (\Exception $e) {
+        $this->logError("Failed to set Chargeback status on Contribution #{$contribution['id']}: {$e->getMessage()}", [
+          'contribution_id' => $contribution['id'],
+          'error' => $e->getMessage(),
+        ]);
+      }
     }
   }
 
   /**
-   * Attach a Note to the contribution with chargeback details from Mollie.
-   *
-   * Fetches chargeback records from Mollie's API and records the amount,
-   * date, and reason (if provided) as a CiviCRM Note on the contribution
-   * for staff reference.
+   * Attach a Note to the contribution with details about a single chargeback.
    *
    * @param array $contribution
    * @param \Mollie\Api\Resources\Payment $molliePayment
-   * @param string $chargebackAmount
-   * @param string $currency
+   * @param \Mollie\Api\Resources\Chargeback $chargeback
    */
   protected function recordChargebackNote(
     array $contribution,
     \Mollie\Api\Resources\Payment $molliePayment,
-    string $chargebackAmount,
-    string $currency,
+    \Mollie\Api\Resources\Chargeback $chargeback,
   ): void {
+    $currency = $chargeback->amount->currency ?? 'EUR';
     $lines = [
       E::ts('A chargeback was received on this contribution.'),
       '',
-      E::ts('Chargeback amount: %1 %2', [1 => $chargebackAmount, 2 => $currency]),
-      E::ts('Original amount: %1 %2', [1 => $molliePayment->amount->value, 2 => $currency]),
+      E::ts('Chargeback ID: %1', [1 => $chargeback->id]),
+      E::ts('Amount: %1 %2', [1 => $chargeback->amount->value, 2 => $currency]),
+      E::ts('Date: %1', [1 => $chargeback->createdAt ?? 'unknown']),
       E::ts('Mollie payment ID: %1', [1 => $molliePayment->id]),
+      E::ts('Original payment amount: %1 %2', [1 => $molliePayment->amount->value, 2 => $currency]),
     ];
 
-    try {
-      $chargebacks = $molliePayment->chargebacks();
-      foreach ($chargebacks as $chargeback) {
-        $lines[] = '';
-        $lines[] = E::ts('Chargeback ID: %1', [1 => $chargeback->id]);
-        $lines[] = E::ts('Amount: %1 %2', [1 => $chargeback->amount->value, 2 => $chargeback->amount->currency]);
-        $lines[] = E::ts('Date: %1', [1 => $chargeback->createdAt ?? 'unknown']);
-
-        if ($chargeback->reason !== NULL) {
-          $reasonCode = $chargeback->reason->code ?? '';
-          $reasonDesc = $chargeback->reason->description ?? '';
-          $lines[] = E::ts('Reason: %1 — %2', [1 => $reasonCode, 2 => $reasonDesc]);
-        }
-
-        if ($chargeback->reversedAt !== NULL) {
-          $lines[] = E::ts('Reversed at: %1', [1 => $chargeback->reversedAt]);
-        }
-      }
+    if ($molliePayment->amountChargedBack !== NULL) {
+      $lines[] = E::ts('Total charged back: %1 %2', [1 => $molliePayment->amountChargedBack->value, 2 => $currency]);
     }
-    catch (\Exception $e) {
-      $lines[] = '';
-      $lines[] = E::ts('(Could not fetch chargeback details from Mollie: %1)', [1 => $e->getMessage()]);
+
+    if ($chargeback->reason !== NULL) {
+      $reasonCode = $chargeback->reason->code ?? '';
+      $reasonDesc = $chargeback->reason->description ?? '';
+      $lines[] = E::ts('Reason: %1 — %2', [1 => $reasonCode, 2 => $reasonDesc]);
+    }
+
+    if ($chargeback->reversedAt !== NULL) {
+      $lines[] = E::ts('Reversed at: %1', [1 => $chargeback->reversedAt]);
     }
 
     try {
       \Civi\Api4\Note::create(FALSE)
         ->addValue('entity_table', 'civicrm_contribution')
         ->addValue('entity_id', $contribution['id'])
-        ->addValue('subject', E::ts('Mollie Chargeback'))
+        ->addValue('subject', E::ts('Mollie Chargeback: %1', [1 => $chargeback->id]))
         ->addValue('note', implode("\n", $lines))
         ->addValue('contact_id', $contribution['contact_id'])
         ->execute();
     }
     catch (\Exception $e) {
-      $this->logError("Failed to create chargeback note for Contribution #{$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
-        'mollie_payment_id' => $molliePayment->id,
+      $this->logError("Failed to create chargeback note for Contribution #{$contribution['id']} ({$chargeback->id}): {$e->getMessage()}", [
         'contribution_id' => $contribution['id'],
+        'chargeback_id' => $chargeback->id,
         'error' => $e->getMessage(),
       ]);
     }
   }
 
   /**
-   * Handle a refund on a payment.
+   * Handle refunds on a payment.
    *
    * Mollie re-sends the payment webhook when a refund reaches processing,
    * refunded, or failed. The payment stays "paid" but gains refund data.
-   * We mark the CiviCRM contribution with the Refunded status and log
-   * full details for staff.
+   * Each refund is recorded as a negative payment via Payment.create for
+   * proper financial bookkeeping. CiviCRM automatically handles the
+   * contribution status transition: full refund → Refunded, partial →
+   * Partially paid.
+   *
+   * Idempotency is per-refund: each refund's Mollie ID is used as trxn_id
+   * on the FinancialTrxn, so duplicates are skipped.
    *
    * @param array $contribution
    * @param \Mollie\Api\Resources\Payment $molliePayment
    */
   protected function handleRefund(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
-    // Already marked as refunded — nothing to do.
-    if ($contribution['contribution_status_id:name'] === 'Refunded') {
-      $this->logDebug("Contribution #{$contribution['id']} already marked as Refunded, skipping (mollie: {$molliePayment->id})", [
-        'mollie_payment_id' => $molliePayment->id,
-        'contribution_id' => $contribution['id'],
-      ]);
-      return;
-    }
-
     try {
-      $refundedAmount = $molliePayment->amountRefunded !== NULL
-        ? $molliePayment->amountRefunded->value
-        : 'unknown';
-      $currency = $molliePayment->amountRefunded !== NULL
-        ? ($molliePayment->amountRefunded->currency ?? 'EUR')
-        : ($molliePayment->amount->currency ?? 'EUR');
-
-      \Civi\Api4\Contribution::update(FALSE)
-        ->addWhere('id', '=', $contribution['id'])
-        ->addValue('contribution_status_id:name', 'Refunded')
-        ->addValue('cancel_date', date('Y-m-d H:i:s'))
-        ->execute();
-
-      // Fetch refund details from Mollie for the paper trail.
-      $this->recordRefundNote($contribution, $molliePayment, $refundedAmount, $currency);
-
-      $originalAmount = $molliePayment->amount->value ?? 'unknown';
-      $this->logWarning("Refund received on Contribution #{$contribution['id']}: {$refundedAmount} of {$originalAmount} {$currency} (mollie: {$molliePayment->id})", [
-        'contribution_id' => $contribution['id'],
-        'mollie_payment_id' => $molliePayment->id,
-        'refunded_amount' => $refundedAmount,
-        'original_amount' => $originalAmount,
-      ]);
+      $refunds = $molliePayment->refunds();
     }
     catch (\Exception $e) {
-      $this->logError("Failed to process refund on Contribution #{$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+      $this->logError("Failed to fetch refunds for Contribution #{$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
         'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $contribution['id'],
         'error' => $e->getMessage(),
       ]);
+      return;
+    }
+
+    foreach ($refunds as $refund) {
+      // Only record refunds that have actually moved money.
+      if (!in_array($refund->status, ['processing', 'refunded'], TRUE)) {
+        continue;
+      }
+
+      if ($this->financialTrxnExists($refund->id)) {
+        continue;
+      }
+
+      try {
+        $amount = $refund->amount->value;
+        $currency = $refund->amount->currency ?? 'EUR';
+
+        civicrm_api3('Payment', 'create', [
+          'contribution_id' => $contribution['id'],
+          'total_amount' => -$amount,
+          'trxn_id' => $refund->id,
+          'trxn_date' => $refund->createdAt ?? date('Y-m-d H:i:s'),
+          'payment_processor_id' => $this->_paymentProcessor['id'],
+        ]);
+
+        $this->recordRefundNote($contribution, $molliePayment, $refund);
+
+        $this->logWarning("Refund {$refund->id} recorded on Contribution #{$contribution['id']}: -{$amount} {$currency} (mollie: {$molliePayment->id})", [
+          'contribution_id' => $contribution['id'],
+          'mollie_payment_id' => $molliePayment->id,
+          'refund_id' => $refund->id,
+          'refund_amount' => $amount,
+        ]);
+      }
+      catch (\Exception $e) {
+        $this->logError("Failed to record refund {$refund->id} on Contribution #{$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
+          'mollie_payment_id' => $molliePayment->id,
+          'contribution_id' => $contribution['id'],
+          'refund_id' => $refund->id,
+          'error' => $e->getMessage(),
+        ]);
+      }
     }
   }
 
   /**
-   * Attach a Note to the contribution with refund details from Mollie.
-   *
-   * Fetches refund records from Mollie's API and records the amount,
-   * date, status, and description as a CiviCRM Note on the contribution
-   * for staff reference.
+   * Attach a Note to the contribution with details about a single refund.
    *
    * @param array $contribution
    * @param \Mollie\Api\Resources\Payment $molliePayment
-   * @param string $refundedAmount
-   * @param string $currency
+   * @param \Mollie\Api\Resources\Refund $refund
    */
   protected function recordRefundNote(
     array $contribution,
     \Mollie\Api\Resources\Payment $molliePayment,
-    string $refundedAmount,
-    string $currency,
+    \Mollie\Api\Resources\Refund $refund,
   ): void {
+    $currency = $refund->amount->currency ?? 'EUR';
     $lines = [
       E::ts('A refund was issued on this contribution.'),
       '',
-      E::ts('Total refunded: %1 %2', [1 => $refundedAmount, 2 => $currency]),
-      E::ts('Original amount: %1 %2', [1 => $molliePayment->amount->value, 2 => $currency]),
+      E::ts('Refund ID: %1', [1 => $refund->id]),
+      E::ts('Amount: %1 %2', [1 => $refund->amount->value, 2 => $currency]),
+      E::ts('Status: %1', [1 => $refund->status]),
+      E::ts('Date: %1', [1 => $refund->createdAt ?? 'unknown']),
       E::ts('Mollie payment ID: %1', [1 => $molliePayment->id]),
+      E::ts('Original payment amount: %1 %2', [1 => $molliePayment->amount->value, 2 => $currency]),
     ];
 
+    if ($molliePayment->amountRefunded !== NULL) {
+      $lines[] = E::ts('Total refunded: %1 %2', [1 => $molliePayment->amountRefunded->value, 2 => $currency]);
+    }
     if ($molliePayment->amountRemaining !== NULL) {
       $lines[] = E::ts('Remaining: %1 %2', [1 => $molliePayment->amountRemaining->value, 2 => $currency]);
     }
 
-    try {
-      $refunds = $molliePayment->refunds();
-      foreach ($refunds as $refund) {
-        $lines[] = '';
-        $lines[] = E::ts('Refund ID: %1', [1 => $refund->id]);
-        $lines[] = E::ts('Amount: %1 %2', [1 => $refund->amount->value, 2 => $refund->amount->currency]);
-        $lines[] = E::ts('Status: %1', [1 => $refund->status]);
-        $lines[] = E::ts('Date: %1', [1 => $refund->createdAt ?? 'unknown']);
-
-        if ($refund->description !== NULL) {
-          $lines[] = E::ts('Description: %1', [1 => $refund->description]);
-        }
-      }
-    }
-    catch (\Exception $e) {
-      $lines[] = '';
-      $lines[] = E::ts('(Could not fetch refund details from Mollie: %1)', [1 => $e->getMessage()]);
+    if ($refund->description !== NULL) {
+      $lines[] = E::ts('Description: %1', [1 => $refund->description]);
     }
 
     try {
       \Civi\Api4\Note::create(FALSE)
         ->addValue('entity_table', 'civicrm_contribution')
         ->addValue('entity_id', $contribution['id'])
-        ->addValue('subject', E::ts('Mollie Refund'))
+        ->addValue('subject', E::ts('Mollie Refund: %1', [1 => $refund->id]))
         ->addValue('note', implode("\n", $lines))
         ->addValue('contact_id', $contribution['contact_id'])
         ->execute();
     }
     catch (\Exception $e) {
-      $this->logError("Failed to create refund note for Contribution #{$contribution['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
-        'mollie_payment_id' => $molliePayment->id,
+      $this->logError("Failed to create refund note for Contribution #{$contribution['id']} ({$refund->id}): {$e->getMessage()}", [
         'contribution_id' => $contribution['id'],
+        'refund_id' => $refund->id,
         'error' => $e->getMessage(),
       ]);
     }
+  }
+
+  /**
+   * Check if a FinancialTrxn with the given trxn_id already exists.
+   *
+   * Used for idempotency when recording refunds and chargebacks — each
+   * Mollie refund/chargeback ID is stored as the trxn_id on the
+   * FinancialTrxn created by Payment.create.
+   *
+   * @param string $trxnId
+   *
+   * @return bool
+   */
+  protected function financialTrxnExists(string $trxnId): bool {
+    $result = \Civi\Api4\FinancialTrxn::get(FALSE)
+      ->addSelect('id')
+      ->addWhere('trxn_id', '=', $trxnId)
+      ->setLimit(1)
+      ->execute();
+
+    return $result->count() > 0;
   }
 
   // ---------------------------------------------------------------------------
