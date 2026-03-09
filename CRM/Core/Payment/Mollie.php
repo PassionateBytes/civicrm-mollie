@@ -205,8 +205,9 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
 
     // Mollie does not support changing the number of installments on an
     // existing subscription. Block the update if installments changed.
-    $newInstallments = $params['installments'] ?? NULL;
-    if (($newInstallments ?? NULL) != ($recur['installments'] ?? NULL)) {
+    $newInstallments = isset($params['installments']) ? (int) $params['installments'] : NULL;
+    $oldInstallments = isset($recur['installments']) ? (int) $recur['installments'] : NULL;
+    if ($newInstallments !== $oldInstallments) {
       throw new PaymentProcessorException(E::ts('The number of installments cannot be changed on a Mollie subscription. Cancel this subscription and create a new one instead.'));
     }
 
