@@ -74,7 +74,7 @@ class Run extends AbstractAction {
       try {
         $mollieCustomerId = self::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
         if ($mollieCustomerId === NULL) {
-          \CRM_Mollie_Log::warning("Sync: no Mollie customer for ContributionRecur {$recur['id']}", [
+          \CRM_Mollie_Log::warning("Sync: no Mollie customer for ContributionRecur #{$recur['id']}", [
             'contribution_recur_id' => $recur['id'],
           ]);
           continue;
@@ -108,7 +108,7 @@ class Run extends AbstractAction {
           };
         }
 
-        \CRM_Mollie_Log::info("Sync: updated recur {$recur['id']} from subscription {$recur['processor_id']}", [
+        \CRM_Mollie_Log::info("Sync: updated recur #{$recur['id']} from subscription {$recur['processor_id']}", [
           'contribution_recur_id' => $recur['id'],
           'subscription_id' => $recur['processor_id'],
           'updates' => $updates,
@@ -116,7 +116,7 @@ class Run extends AbstractAction {
       }
       catch (\Exception $e) {
         $stats['errors']++;
-        \CRM_Mollie_Log::error("Sync: failed to check subscription for recur {$recur['id']}: {$e->getMessage()}", [
+        \CRM_Mollie_Log::error("Sync: failed to check subscription for recur #{$recur['id']}: {$e->getMessage()}", [
           'contribution_recur_id' => $recur['id'],
           'error' => $e->getMessage(),
         ]);
@@ -222,14 +222,14 @@ class Run extends AbstractAction {
         );
         $stats['cancellations_retried']++;
 
-        \CRM_Mollie_Log::info("Sync: retried cancellation of subscription {$recur['processor_id']} for recur {$recur['id']}", [
+        \CRM_Mollie_Log::info("Sync: retried cancellation of subscription {$recur['processor_id']} for recur #{$recur['id']}", [
           'contribution_recur_id' => $recur['id'],
           'subscription_id' => $recur['processor_id'],
         ]);
       }
       catch (\Exception $e) {
         $stats['cancellations_failed']++;
-        \CRM_Mollie_Log::error("Sync: failed to retry cancellation for recur {$recur['id']}: {$e->getMessage()}", [
+        \CRM_Mollie_Log::error("Sync: failed to retry cancellation for recur #{$recur['id']}: {$e->getMessage()}", [
           'contribution_recur_id' => $recur['id'],
           'error' => $e->getMessage(),
         ]);
