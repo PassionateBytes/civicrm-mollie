@@ -138,14 +138,12 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ->first();
 
     if (empty($recur['processor_id'])) {
-      $message = E::ts('No Mollie subscription ID found for this recurring contribution.');
-      return FALSE;
+      throw new PaymentProcessorException(E::ts('No Mollie subscription ID found for this recurring contribution.'));
     }
 
     $mollieCustomer = $this->findMollieCustomerByContactId($recur['contact_id']);
     if ($mollieCustomer === NULL) {
-      $message = E::ts('No Mollie customer found for this contact.');
-      return FALSE;
+      throw new PaymentProcessorException(E::ts('No Mollie customer found for this contact.'));
     }
 
     try {
@@ -164,8 +162,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'subscription_id' => $recur['processor_id'],
         'error' => $e->getMessage(),
       ]);
-      $message = E::ts('Failed to cancel the subscription on Mollie: %1', [1 => $e->getMessage()]);
-      return FALSE;
+      throw new PaymentProcessorException(E::ts('Failed to cancel the subscription on Mollie: %1', [1 => $e->getMessage()]));
     }
   }
 
@@ -185,8 +182,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     $newAmount = $params['amount'] ?? NULL;
 
     if ($recurId === NULL || $newAmount === NULL) {
-      $message = E::ts('Missing required parameters for amount change.');
-      return FALSE;
+      throw new PaymentProcessorException(E::ts('Missing required parameters for amount change.'));
     }
 
     $recur = \Civi\Api4\ContributionRecur::get(FALSE)
@@ -197,14 +193,12 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ->first();
 
     if (empty($recur['processor_id'])) {
-      $message = E::ts('No Mollie subscription ID found for this recurring contribution.');
-      return FALSE;
+      throw new PaymentProcessorException(E::ts('No Mollie subscription ID found for this recurring contribution.'));
     }
 
     $mollieCustomer = $this->findMollieCustomerByContactId($recur['contact_id']);
     if ($mollieCustomer === NULL) {
-      $message = E::ts('No Mollie customer found for this contact.');
-      return FALSE;
+      throw new PaymentProcessorException(E::ts('No Mollie customer found for this contact.'));
     }
 
     try {
@@ -229,8 +223,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'subscription_id' => $recur['processor_id'],
         'error' => $e->getMessage(),
       ]);
-      $message = E::ts('Failed to update subscription amount on Mollie: %1', [1 => $e->getMessage()]);
-      return FALSE;
+      throw new PaymentProcessorException(E::ts('Failed to update subscription amount on Mollie: %1', [1 => $e->getMessage()]));
     }
   }
 
