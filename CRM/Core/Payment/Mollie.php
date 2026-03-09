@@ -610,10 +610,25 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       'is_send_contribution_notification' => $contribution['is_email_receipt'] ?? FALSE,
     ];
 
+    // Mollie does not provide an explicit fee field. Fees are derived from
+    // amount - settlementAmount, where settlementAmount is the approximate
+    // amount settled to the merchant account. This only works when both are
+    // in the same currency. In multi-currency contexts, the Balance
+    // Transactions API would be needed for accurate fees.
+    // TODO: If multi-currency support is added, integrate the Balance
+    // Transactions API (GET /v2/balances/{id}/transactions) for precise fees.
     if ($molliePayment->settlementAmount !== NULL) {
-      $feeAmount = (float) $molliePayment->amount->value - (float) $molliePayment->settlementAmount->value;
-      if ($feeAmount > 0) {
-        $params['fee_amount'] = number_format($feeAmount, 2, '.', '');
+      if (($molliePayment->amount->currency ?? 'EUR') !== ($molliePayment->settlementAmount->currency ?? 'EUR')) {
+        $this->logWarning("Currency mismatch on fee calculation for Contribution #{$contribution['id']}: amount={$molliePayment->amount->currency}, settlement={$molliePayment->settlementAmount->currency} (mollie: {$molliePayment->id})", [
+          'mollie_payment_id' => $molliePayment->id,
+          'contribution_id' => $contribution['id'],
+        ]);
+      }
+      else {
+        $feeAmount = (float) $molliePayment->amount->value - (float) $molliePayment->settlementAmount->value;
+        if ($feeAmount > 0) {
+          $params['fee_amount'] = number_format($feeAmount, 2, '.', '');
+        }
       }
     }
 
@@ -1175,9 +1190,17 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   protected function createRecurringInstallment(array $contributionRecur, \Mollie\Api\Resources\Payment $molliePayment): void {
     $feeAmount = NULL;
     if ($molliePayment->settlementAmount !== NULL) {
-      $fee = (float) $molliePayment->amount->value - (float) $molliePayment->settlementAmount->value;
-      if ($fee > 0) {
-        $feeAmount = number_format($fee, 2, '.', '');
+      if (($molliePayment->amount->currency ?? 'EUR') !== ($molliePayment->settlementAmount->currency ?? 'EUR')) {
+        $this->logWarning("Currency mismatch on fee calculation for recurring installment: amount={$molliePayment->amount->currency}, settlement={$molliePayment->settlementAmount->currency} (mollie: {$molliePayment->id})", [
+          'mollie_payment_id' => $molliePayment->id,
+          'contribution_recur_id' => $contributionRecur['id'],
+        ]);
+      }
+      else {
+        $fee = (float) $molliePayment->amount->value - (float) $molliePayment->settlementAmount->value;
+        if ($fee > 0) {
+          $feeAmount = number_format($fee, 2, '.', '');
+        }
       }
     }
 
