@@ -158,6 +158,17 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       return TRUE;
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
+      // 410 Gone means the subscription was already canceled or deleted on
+      // Mollie. Treat as success — the desired outcome is achieved.
+      if ($e->getCode() === 410) {
+        $this->logInfo("Mollie subscription {$recur['processor_id']} already canceled on Mollie (ContributionRecur #{$recurId})", [
+          'subscription_id' => $recur['processor_id'],
+          'contribution_recur_id' => $recurId,
+        ]);
+        $message = E::ts('Mollie subscription was already cancelled.');
+        return TRUE;
+      }
+
       $this->logError("Failed to cancel Mollie subscription {$recur['processor_id']}: {$e->getMessage()}", [
         'subscription_id' => $recur['processor_id'],
         'error' => $e->getMessage(),
