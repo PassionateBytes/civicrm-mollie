@@ -395,6 +395,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * form-encoded data with `id=<payment_id>`.
    */
   public function handlePaymentNotification(): void {
+    // Ensure webhook processing completes even if Mollie closes the
+    // connection after its 15-second timeout.
+    ignore_user_abort(TRUE);
+
     $paymentId = $_POST['id'] ?? NULL;
     if (empty($paymentId)) {
       $this->logWarning('Webhook received without payment ID');
