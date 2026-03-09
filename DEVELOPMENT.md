@@ -96,6 +96,36 @@ Mollie re-sends the payment webhook when a chargeback is filed. The payment stay
 4. Attaches a Note to the Contribution with full chargeback details for staff reference
 5. Applies to both one-off and recurring installment payments
 
+### Email Templates
+
+The extension ships a workflow message template (`mollie_recurring_reminder`) for pre-payment reminder emails. It follows CiviCRM's standard managed template pattern:
+
+- **Reserved template** (`update: always`) — kept in sync with the extension code on every upgrade. Serves as the factory default.
+- **Editable template** (`update: never`) — created once on install, never overwritten. Admins can customize this via the CiviCRM UI. To revert to the default, use the "Revert to default" option in CiviCRM's Message Templates screen.
+
+The template source is in `managed/MessageTemplate_RecurringReminder.mgd.php` and includes both HTML and plain text versions.
+
+#### Custom Tokens
+
+The extension registers a custom token provider (`Civi/Mollie/Token/ContributionRecurTokens.php`) that activates when `contributionRecurId` is present in the token processor schema. This makes `{contribution_recur.*}` tokens available in the reminder template.
+
+| Token | Resolves to | Example |
+|-------|-------------|---------|
+| `{contribution_recur.amount}` | Formatted amount with currency symbol | `€ 25,00` |
+| `{contribution_recur.currency}` | ISO currency code | `EUR` |
+| `{contribution_recur.frequency_interval}` | Frequency interval number | `1` |
+| `{contribution_recur.frequency_unit}` | Frequency unit (raw DB value) | `month` |
+| `{contribution_recur.next_sched_contribution_date}` | Next charge date (formatted, date only) | `March 10th, 2026` |
+
+In addition, all standard CiviCRM tokens are available in the template:
+
+| Token namespace | Description |
+|-----------------|-------------|
+| `{contact.*}` | Contact fields (e.g., `{contact.email_greeting_display}`, `{contact.display_name}`) |
+| `{domain.*}` | Domain/organization fields (e.g., `{domain.name}`) |
+
+The template also supports Smarty syntax for conditional logic. The default template uses this to format the frequency display (e.g., "Every month" vs "Every 3 month").
+
 ### Key Entry Points
 
 | File | Purpose |
@@ -103,6 +133,8 @@ Mollie re-sends the payment webhook when a chargeback is filed. The payment stay
 | `CRM/Core/Payment/Mollie.php` | Payment processor — payment initiation, webhook handling, recurring lifecycle |
 | `Civi/Api4/Action/MollieSync/Run.php` | Sync job implementation |
 | `Civi/Api4/Action/MollieRecurringReminder/Run.php` | Reminder job implementation |
+| `Civi/Mollie/Token/ContributionRecurTokens.php` | Custom token provider for `{contribution_recur.*}` tokens |
+| `CRM/Mollie/WorkflowMessage/RecurringReminder.php` | Workflow message class for reminder emails |
 | `schema/MollieCustomer.entityType.php` | MollieCustomer entity schema |
 | `managed/*.mgd.php` | Managed entities (processor type, saved searches, scheduled jobs, templates) |
 | `mollie.php` | Hook implementations |

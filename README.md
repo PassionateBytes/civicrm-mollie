@@ -78,6 +78,8 @@ Once the payment processor is configured, assign it to your contribution pages u
 
 ## How It Works
 
+For detailed payment flow sequences, see the [Payment Flows](DEVELOPMENT.md#payment-flows) section in the development guide.
+
 ### One-Off Contributions
 
 1. Contact fills out a CiviCRM contribution page and submits.
@@ -96,6 +98,8 @@ Once the payment processor is configured, assign it to your contribution pages u
 ### Pre-Payment Reminders
 
 When enabled, a daily scheduled job checks for upcoming recurring charges and sends reminder emails to contacts within the configured window (default: 7 days before). The email template can be customized via **Mailings > Message Templates > System Workflow Messages** (look for "Mollie Recurring Reminder").
+
+The template uses custom `{contribution_recur.*}` tokens provided by this extension, as well as standard CiviCRM tokens like `{contact.*}` and `{domain.*}`. Customizations to the editable template are preserved across extension upgrades. See the [Email Templates](DEVELOPMENT.md#email-templates) section in the development guide for the full token reference.
 
 ## Admin Dashboard
 
@@ -141,7 +145,7 @@ This extension uses standard CiviCRM permissions — no custom permissions are d
 
 All search displays respect CiviCRM's standard contact and contribution ACLs.
 
-The webhook endpoint is unauthenticated by design — Mollie calls it server-to-server, and the handler always verifies payment status by fetching the full payment object from Mollie's API.
+The webhook endpoint is unauthenticated by design — Mollie calls it server-to-server, and the handler always verifies payment status by fetching the full payment object from Mollie's API. See the [Webhook Security](DEVELOPMENT.md#webhook-security) section in the development guide for details.
 
 ## Troubleshooting
 
