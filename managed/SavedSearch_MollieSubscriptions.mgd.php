@@ -34,7 +34,7 @@ return [
             'mollie_customer.mollie_customer_id',
           ],
           'orderBy' => [
-            'next_sched_contribution_date' => 'ASC',
+            'start_date' => 'DESC',
           ],
           'where' => [
             ['processor_id', 'IS NOT NULL'],
@@ -92,7 +92,7 @@ return [
           ],
           'placeholder' => 5,
           'sort' => [
-            ['next_sched_contribution_date', 'ASC'],
+            ['start_date', 'DESC'],
           ],
           'columns' => [
             [
