@@ -577,12 +577,14 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    */
   protected function failContribution(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
     $statusName = $molliePayment->isCanceled() ? 'Cancelled' : 'Failed';
+    $cancelReason = $this->buildCancelReason($molliePayment);
 
     try {
       \Civi\Api4\Contribution::update(FALSE)
         ->addWhere('id', '=', $contribution['id'])
         ->addValue('contribution_status_id:name', $statusName)
         ->addValue('cancel_date', date('Y-m-d H:i:s'))
+        ->addValue('cancel_reason', $cancelReason)
         ->execute();
 
       $this->logInfo('Contribution marked as ' . $statusName, [
@@ -611,12 +613,14 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    */
   protected function failContributionRecur(int $recurId, \Mollie\Api\Resources\Payment $molliePayment): void {
     $statusName = $molliePayment->isCanceled() ? 'Cancelled' : 'Failed';
+    $cancelReason = $this->buildCancelReason($molliePayment);
 
     try {
       \Civi\Api4\ContributionRecur::update(FALSE)
         ->addWhere('id', '=', $recurId)
         ->addValue('contribution_status_id:name', $statusName)
         ->addValue('cancel_date', date('Y-m-d H:i:s'))
+        ->addValue('cancel_reason', $cancelReason)
         ->addValue('end_date', date('Y-m-d H:i:s'))
         ->addValue('next_sched_contribution_date', NULL)
         ->execute();
@@ -633,6 +637,37 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'error' => $e->getMessage(),
       ]);
     }
+  }
+
+  /**
+   * Build a human-readable cancel reason from a Mollie payment.
+   *
+   * Assembles status, payment method, and any failure details provided by
+   * Mollie into a concise string for the cancel_reason field.
+   *
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   *
+   * @return string
+   */
+  protected function buildCancelReason(\Mollie\Api\Resources\Payment $molliePayment): string {
+    $status = $molliePayment->status ?? 'unknown';
+    $parts = [
+      E::ts('Mollie payment') . " {$status}: {$molliePayment->id}",
+    ];
+
+    if (!empty($molliePayment->method)) {
+      $parts[] = E::ts('Method') . ": {$molliePayment->method}";
+    }
+
+    // Some payment methods (e.g. credit card) include failure details.
+    $failureReason = $molliePayment->details->failureReason ?? NULL;
+    $failureMessage = $molliePayment->details->failureMessage ?? NULL;
+    if ($failureReason !== NULL || $failureMessage !== NULL) {
+      $detail = implode(' — ', array_filter([$failureReason, $failureMessage]));
+      $parts[] = E::ts('Reason') . ": {$detail}";
+    }
+
+    return implode('. ', $parts);
   }
 
   /**

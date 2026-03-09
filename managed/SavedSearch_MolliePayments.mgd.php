@@ -24,6 +24,7 @@ return [
             'receive_date',
             'trxn_id',
             'contribution_status_id:label',
+            'cancel_reason',
             'fee_amount',
             'contribution_recur_id',
             'is_test',
@@ -32,18 +33,11 @@ return [
             'receive_date' => 'DESC',
           ],
           'where' => [
-            ['ft.payment_processor_id.payment_processor_type_id:name', '=', 'mollie'],
+            ['trxn_id', 'LIKE', 'tr_%'],
             ['OR', [['is_test', '=', 0], ['is_test', '=', 1]]],
           ],
-          'groupBy' => ['id'],
-          'join' => [
-            [
-              'FinancialTrxn AS ft',
-              'INNER',
-              'EntityFinancialTrxn',
-              ['ft.payment_processor_id', 'IS NOT NULL'],
-            ],
-          ],
+          'groupBy' => [],
+          'join' => [],
           'having' => [],
         ],
       ],
@@ -91,6 +85,19 @@ return [
             ],
             [
               'type' => 'field',
+              'key' => 'trxn_id',
+              'label' => E::ts('Mollie Payment ID'),
+              'sortable' => TRUE,
+              'link' => [
+                'path' => 'civicrm/admin/mollie/detail?api_path=payments/[trxn_id]',
+                'entity' => '',
+                'action' => '',
+                'join' => '',
+                'target' => 'crm-popup',
+              ],
+            ],
+            [
+              'type' => 'field',
               'key' => 'total_amount',
               'label' => E::ts('Amount'),
               'sortable' => TRUE,
@@ -109,22 +116,10 @@ return [
             ],
             [
               'type' => 'field',
-              'key' => 'trxn_id',
-              'label' => E::ts('Mollie Payment ID'),
-              'sortable' => TRUE,
-              'link' => [
-                'path' => 'https://my.mollie.com/dashboard/payments/[trxn_id]',
-                'entity' => '',
-                'action' => '',
-                'join' => '',
-                'target' => '_blank',
-              ],
-            ],
-            [
-              'type' => 'field',
               'key' => 'contribution_status_id:label',
               'label' => E::ts('Status'),
               'sortable' => TRUE,
+              'title' => '[cancel_reason]',
             ],
             [
               'type' => 'field',
@@ -134,7 +129,7 @@ return [
             ],
           ],
           'cssRules' => [
-            ['alert-warning', 'is_test', '=', TRUE],
+            ['alert-info font-italic', 'is_test', '=', TRUE],
           ],
           'filters' => [
             ['key' => 'is_test', 'default' => FALSE],

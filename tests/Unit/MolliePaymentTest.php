@@ -2,6 +2,8 @@
 
 namespace Tests\Unit;
 
+use Mollie\Api\MollieApiClient;
+use Mollie\Api\Resources\Payment;
 use PHPUnit\Framework\TestCase;
 use Civi\Payment\Exception\PaymentProcessorException;
 
@@ -25,6 +27,10 @@ class TestableMolliePayment extends \CRM_Core_Payment_Mollie {
 
   public function exposedCalculateNextScheduledDate(array $recur): ?string {
     return $this->calculateNextScheduledDate($recur);
+  }
+
+  public function exposedBuildCancelReason(Payment $molliePayment): string {
+    return $this->buildCancelReason($molliePayment);
   }
 }
 
@@ -106,5 +112,79 @@ class MolliePaymentTest extends TestCase {
   public function testCalculateNextDateEmptyArray(): void {
     $payment = new TestableMolliePayment();
     $this->assertNull($payment->exposedCalculateNextScheduledDate([]));
+  }
+
+  // -----------------------------------------------------------------------
+  // buildCancelReason
+  // -----------------------------------------------------------------------
+
+  private function makeMolliePayment(array $props): Payment {
+    $client = $this->createMock(MollieApiClient::class);
+    $payment = new Payment($client);
+    $payment->id = $props['id'] ?? 'tr_test123';
+    $payment->status = $props['status'] ?? 'failed';
+    $payment->method = $props['method'] ?? NULL;
+    $payment->details = $props['details'] ?? NULL;
+    return $payment;
+  }
+
+  public function testBuildCancelReasonBasic(): void {
+    $processor = new TestableMolliePayment();
+    $molliePayment = $this->makeMolliePayment([
+      'id' => 'tr_abc123',
+      'status' => 'failed',
+    ]);
+
+    $result = $processor->exposedBuildCancelReason($molliePayment);
+
+    $this->assertStringContainsString('tr_abc123', $result);
+    $this->assertStringContainsString('failed', $result);
+  }
+
+  public function testBuildCancelReasonWithMethod(): void {
+    $processor = new TestableMolliePayment();
+    $molliePayment = $this->makeMolliePayment([
+      'id' => 'tr_abc123',
+      'status' => 'expired',
+      'method' => 'ideal',
+    ]);
+
+    $result = $processor->exposedBuildCancelReason($molliePayment);
+
+    $this->assertStringContainsString('ideal', $result);
+    $this->assertStringContainsString('expired', $result);
+  }
+
+  public function testBuildCancelReasonWithFailureDetails(): void {
+    $processor = new TestableMolliePayment();
+    $details = new \stdClass();
+    $details->failureReason = 'insufficient_funds';
+    $details->failureMessage = 'Card declined';
+    $molliePayment = $this->makeMolliePayment([
+      'id' => 'tr_abc123',
+      'status' => 'failed',
+      'method' => 'creditcard',
+      'details' => $details,
+    ]);
+
+    $result = $processor->exposedBuildCancelReason($molliePayment);
+
+    $this->assertStringContainsString('insufficient_funds', $result);
+    $this->assertStringContainsString('Card declined', $result);
+    $this->assertStringContainsString('creditcard', $result);
+  }
+
+  public function testBuildCancelReasonWithoutDetails(): void {
+    $processor = new TestableMolliePayment();
+    $molliePayment = $this->makeMolliePayment([
+      'id' => 'tr_abc123',
+      'status' => 'canceled',
+    ]);
+
+    $result = $processor->exposedBuildCancelReason($molliePayment);
+
+    // Should not contain "Reason" label when no details present.
+    $this->assertStringNotContainsString('Reason', $result);
+    $this->assertStringContainsString('canceled', $result);
   }
 }
