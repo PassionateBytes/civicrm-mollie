@@ -60,7 +60,7 @@ class Run extends AbstractAction {
         'contribution_status_id:name', 'next_sched_contribution_date', 'amount',
         'currency', 'end_date', 'cancel_date')
       ->addWhere('processor_id', 'LIKE', 'sub_%')
-      ->addWhere('contribution_status_id:name', 'IN', ['In Progress', 'Pending'])
+      ->addWhere('contribution_status_id:name', 'IN', ['In Progress', 'Pending', 'On hold'])
       ->addWhere('is_test', 'IN', [0, 1])
       ->addJoin('PaymentProcessorType AS ppt', 'INNER',
         ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
@@ -140,6 +140,14 @@ class Run extends AbstractAction {
 
     // Status.
     $newStatus = self::mapMollieStatusToCiviCrm($subscription->status);
+    // When a paused subscription resumes, Mollie returns 'active' which maps
+    // to NULL (no change). Detect this and transition back to 'In Progress'.
+    if ($newStatus === NULL
+      && in_array($subscription->status, ['active', 'pending'], TRUE)
+      && $recur['contribution_status_id:name'] === 'On hold'
+    ) {
+      $newStatus = 'In Progress';
+    }
     if ($newStatus !== NULL && $newStatus !== $recur['contribution_status_id:name']) {
       $updates['contribution_status_id:name'] = $newStatus;
 
@@ -154,7 +162,7 @@ class Run extends AbstractAction {
         $updates['end_date'] = $updates['cancel_date'];
         $updates['next_sched_contribution_date'] = NULL;
       }
-      if ($newStatus === 'Failed') {
+      if ($newStatus === 'Failed' || $newStatus === 'On hold') {
         $updates['next_sched_contribution_date'] = NULL;
       }
     }
@@ -249,6 +257,7 @@ class Run extends AbstractAction {
       'completed' => 'Completed',
       'canceled' => 'Cancelled',
       'suspended' => 'Failed',
+      'paused' => 'On hold',
       'active', 'pending' => NULL,
       default => NULL,
     };

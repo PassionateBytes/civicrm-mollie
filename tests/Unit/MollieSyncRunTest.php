@@ -166,6 +166,46 @@ namespace Tests\Unit {
       $this->assertNull($updates['next_sched_contribution_date']);
     }
 
+    public function testBuildUpdatesStatusPaused(): void {
+      $sub = $this->makeSubscription([
+        'status' => 'paused',
+        'nextPaymentDate' => NULL,
+        'amount' => $this->makeAmount('25.00'),
+        'canceledAt' => NULL,
+      ]);
+      $recur = [
+        'contribution_status_id:name' => 'In Progress',
+        'next_sched_contribution_date' => '2026-04-01 00:00:00',
+        'amount' => '25.00',
+      ];
+
+      $run = new TestableMollieSyncRun();
+      $updates = $run->exposedBuildUpdatesFromSubscription($sub, $recur);
+
+      $this->assertSame('On hold', $updates['contribution_status_id:name']);
+      $this->assertNull($updates['next_sched_contribution_date']);
+    }
+
+    public function testBuildUpdatesResumedFromOnHold(): void {
+      $sub = $this->makeSubscription([
+        'status' => 'active',
+        'nextPaymentDate' => '2026-05-01',
+        'amount' => $this->makeAmount('25.00'),
+        'canceledAt' => NULL,
+      ]);
+      $recur = [
+        'contribution_status_id:name' => 'On hold',
+        'next_sched_contribution_date' => NULL,
+        'amount' => '25.00',
+      ];
+
+      $run = new TestableMollieSyncRun();
+      $updates = $run->exposedBuildUpdatesFromSubscription($sub, $recur);
+
+      $this->assertSame('In Progress', $updates['contribution_status_id:name']);
+      $this->assertSame('2026-05-01 00:00:00', $updates['next_sched_contribution_date']);
+    }
+
     public function testBuildUpdatesNextDateChanged(): void {
       $sub = $this->makeSubscription([
         'status' => 'active',
