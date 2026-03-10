@@ -36,25 +36,8 @@ class WebhookTestableMolliePayment extends \CRM_Core_Payment_Mollie {
     $this->processRecurringPaymentWebhook($payment, $existingContribution);
   }
 
-  /**
-   * Expose the post-payment event routing logic from handlePaymentNotification.
-   *
-   * Returns TRUE if a post-payment event was handled, FALSE otherwise.
-   */
-  public function exposedHandlePostPaymentEvents(Payment $molliePayment, ?array $contribution): bool {
-    if ($contribution !== NULL && $molliePayment->isPaid()) {
-      $hasPostPaymentEvent = FALSE;
-      if ($molliePayment->hasRefunds()) {
-        $this->handleRefund($contribution, $molliePayment);
-        $hasPostPaymentEvent = TRUE;
-      }
-      if ($molliePayment->hasChargebacks()) {
-        $this->handleChargeback($contribution, $molliePayment);
-        $hasPostPaymentEvent = TRUE;
-      }
-      return $hasPostPaymentEvent;
-    }
-    return FALSE;
+  public function exposedRoutePaymentWebhook(Payment $molliePayment): void {
+    $this->routePaymentWebhook($molliePayment);
   }
 
   protected function findContributionByTrxnId(string $trxnId): ?array {
@@ -175,87 +158,85 @@ class MollieWebhookTest extends TestCase {
 
   public function testChargebackHandledBeforeRouting(): void {
     $processor = new WebhookTestableMolliePayment();
-    $contribution = $this->makePendingContribution();
-    $contribution['contribution_status_id:name'] = 'Completed';
+    $processor->stubbedContribution = $this->makePendingContribution();
+    $processor->stubbedContribution['contribution_status_id:name'] = 'Completed';
 
     $payment = $this->makePayment([
       'status' => 'paid',
       'hasChargebacks' => TRUE,
     ]);
-    $handled = $processor->exposedHandlePostPaymentEvents($payment, $contribution);
+    $processor->exposedRoutePaymentWebhook($payment);
 
-    $this->assertTrue($handled);
     $this->assertSame(['handleChargeback'], $processor->calledMethods);
   }
 
   public function testRefundHandledBeforeRouting(): void {
     $processor = new WebhookTestableMolliePayment();
-    $contribution = $this->makePendingContribution();
-    $contribution['contribution_status_id:name'] = 'Completed';
+    $processor->stubbedContribution = $this->makePendingContribution();
+    $processor->stubbedContribution['contribution_status_id:name'] = 'Completed';
 
     $payment = $this->makePayment([
       'status' => 'paid',
       'hasRefunds' => TRUE,
     ]);
-    $handled = $processor->exposedHandlePostPaymentEvents($payment, $contribution);
+    $processor->exposedRoutePaymentWebhook($payment);
 
-    $this->assertTrue($handled);
     $this->assertSame(['handleRefund'], $processor->calledMethods);
   }
 
   public function testBothRefundAndChargebackProcessed(): void {
     $processor = new WebhookTestableMolliePayment();
-    $contribution = $this->makePendingContribution();
-    $contribution['contribution_status_id:name'] = 'Completed';
+    $processor->stubbedContribution = $this->makePendingContribution();
+    $processor->stubbedContribution['contribution_status_id:name'] = 'Completed';
 
     $payment = $this->makePayment([
       'status' => 'paid',
       'hasChargebacks' => TRUE,
       'hasRefunds' => TRUE,
     ]);
-    $handled = $processor->exposedHandlePostPaymentEvents($payment, $contribution);
+    $processor->exposedRoutePaymentWebhook($payment);
 
-    $this->assertTrue($handled);
     // Refunds first, then chargebacks — so Chargeback status override wins.
     $this->assertSame(['handleRefund', 'handleChargeback'], $processor->calledMethods);
   }
 
   public function testPostPaymentEventsSkippedWhenNoContribution(): void {
     $processor = new WebhookTestableMolliePayment();
+    $processor->stubbedContribution = NULL;
 
     $payment = $this->makePayment([
       'status' => 'paid',
       'hasChargebacks' => TRUE,
     ]);
-    $handled = $processor->exposedHandlePostPaymentEvents($payment, NULL);
+    $processor->exposedRoutePaymentWebhook($payment);
 
-    $this->assertFalse($handled);
-    $this->assertSame([], $processor->calledMethods);
+    // No contribution found → falls through to one-off handler which records unmatched activity.
+    $this->assertSame(['recordUnmatchedWebhookActivity'], $processor->calledMethods);
   }
 
   public function testPostPaymentEventsSkippedWhenNotPaid(): void {
     $processor = new WebhookTestableMolliePayment();
-    $contribution = $this->makePendingContribution();
+    $processor->stubbedContribution = $this->makePendingContribution();
 
     $payment = $this->makePayment([
       'status' => 'failed',
       'hasChargebacks' => TRUE,
     ]);
-    $handled = $processor->exposedHandlePostPaymentEvents($payment, $contribution);
+    $processor->exposedRoutePaymentWebhook($payment);
 
-    $this->assertFalse($handled);
-    $this->assertSame([], $processor->calledMethods);
+    // Not paid → chargebacks not checked, falls through to one-off handler.
+    $this->assertSame(['failContribution'], $processor->calledMethods);
   }
 
   public function testNoPostPaymentEventsPassesThrough(): void {
     $processor = new WebhookTestableMolliePayment();
-    $contribution = $this->makePendingContribution();
-    $contribution['contribution_status_id:name'] = 'Completed';
+    $processor->stubbedContribution = $this->makePendingContribution();
+    $processor->stubbedContribution['contribution_status_id:name'] = 'Completed';
 
     $payment = $this->makePayment(['status' => 'paid']);
-    $handled = $processor->exposedHandlePostPaymentEvents($payment, $contribution);
+    $processor->exposedRoutePaymentWebhook($payment);
 
-    $this->assertFalse($handled);
+    // No chargebacks/refunds, contribution already completed → idempotency skip.
     $this->assertSame([], $processor->calledMethods);
   }
 

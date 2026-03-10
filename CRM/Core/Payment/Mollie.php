@@ -421,9 +421,23 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       return;
     }
 
+    $this->routePaymentWebhook($molliePayment);
+
+    http_response_code(200);
+  }
+
+  /**
+   * Route a fetched Mollie payment to the appropriate handler.
+   *
+   * Separated from handlePaymentNotification() so the pure routing logic
+   * can be tested without HTTP globals or Mollie API calls.
+   *
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   */
+  protected function routePaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment): void {
     $subscriptionId = $molliePayment->subscriptionId ?? NULL;
-    $this->logDebug("Mollie payment {$paymentId} fetched: status={$molliePayment->status}" . ($subscriptionId ? " subscription={$subscriptionId}" : ''), [
-      'mollie_payment_id' => $paymentId,
+    $this->logDebug("Mollie payment {$molliePayment->id} fetched: status={$molliePayment->status}" . ($subscriptionId ? " subscription={$subscriptionId}" : ''), [
+      'mollie_payment_id' => $molliePayment->id,
       'status' => $molliePayment->status,
       'subscription_id' => $subscriptionId,
     ]);
@@ -451,7 +465,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         $hasPostPaymentEvent = TRUE;
       }
       if ($hasPostPaymentEvent) {
-        http_response_code(200);
         return;
       }
     }
@@ -462,8 +475,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     else {
       $this->processOneOffOrFirstPaymentWebhook($molliePayment, $existingContribution);
     }
-
-    http_response_code(200);
   }
 
   /**
