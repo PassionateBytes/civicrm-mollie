@@ -434,15 +434,23 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     // orthogonal to whether the payment is one-off or recurring, so we
     // handle them here before routing. Must be checked before idempotency
     // skips in the per-type handlers.
+    //
+    // A payment can have both refunds and chargebacks simultaneously (e.g.,
+    // partial refund issued, then customer disputes the rest). Process
+    // refunds first so CiviCRM sets Refunded/Partially paid, then
+    // chargebacks which explicitly override to Chargeback status.
     $existingContribution = $this->findContributionByTrxnId($molliePayment->id);
     if ($existingContribution !== NULL && $molliePayment->isPaid()) {
-      if ($molliePayment->hasChargebacks()) {
-        $this->handleChargeback($existingContribution, $molliePayment);
-        http_response_code(200);
-        return;
-      }
+      $hasPostPaymentEvent = FALSE;
       if ($molliePayment->hasRefunds()) {
         $this->handleRefund($existingContribution, $molliePayment);
+        $hasPostPaymentEvent = TRUE;
+      }
+      if ($molliePayment->hasChargebacks()) {
+        $this->handleChargeback($existingContribution, $molliePayment);
+        $hasPostPaymentEvent = TRUE;
+      }
+      if ($hasPostPaymentEvent) {
         http_response_code(200);
         return;
       }

@@ -43,14 +43,16 @@ class WebhookTestableMolliePayment extends \CRM_Core_Payment_Mollie {
    */
   public function exposedHandlePostPaymentEvents(Payment $molliePayment, ?array $contribution): bool {
     if ($contribution !== NULL && $molliePayment->isPaid()) {
-      if ($molliePayment->hasChargebacks()) {
-        $this->handleChargeback($contribution, $molliePayment);
-        return TRUE;
-      }
+      $hasPostPaymentEvent = FALSE;
       if ($molliePayment->hasRefunds()) {
         $this->handleRefund($contribution, $molliePayment);
-        return TRUE;
+        $hasPostPaymentEvent = TRUE;
       }
+      if ($molliePayment->hasChargebacks()) {
+        $this->handleChargeback($contribution, $molliePayment);
+        $hasPostPaymentEvent = TRUE;
+      }
+      return $hasPostPaymentEvent;
     }
     return FALSE;
   }
@@ -201,7 +203,7 @@ class MollieWebhookTest extends TestCase {
     $this->assertSame(['handleRefund'], $processor->calledMethods);
   }
 
-  public function testChargebackTakesPriorityOverRefund(): void {
+  public function testBothRefundAndChargebackProcessed(): void {
     $processor = new WebhookTestableMolliePayment();
     $contribution = $this->makePendingContribution();
     $contribution['contribution_status_id:name'] = 'Completed';
@@ -214,7 +216,8 @@ class MollieWebhookTest extends TestCase {
     $handled = $processor->exposedHandlePostPaymentEvents($payment, $contribution);
 
     $this->assertTrue($handled);
-    $this->assertSame(['handleChargeback'], $processor->calledMethods);
+    // Refunds first, then chargebacks — so Chargeback status override wins.
+    $this->assertSame(['handleRefund', 'handleChargeback'], $processor->calledMethods);
   }
 
   public function testPostPaymentEventsSkippedWhenNoContribution(): void {
