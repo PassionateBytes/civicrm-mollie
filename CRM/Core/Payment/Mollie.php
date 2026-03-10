@@ -932,8 +932,11 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     }
 
     foreach ($refunds as $refund) {
-      // Only record refunds that have actually moved money.
-      if (!in_array($refund->status, ['processing', 'refunded'], TRUE)) {
+      // Only record refunds that have fully completed. Mollie sends
+      // separate webhooks for processing → refunded/failed, so waiting
+      // for the terminal 'refunded' status avoids recording refunds that
+      // may later fail (e.g. consumer's bank account was closed).
+      if ($refund->status !== 'refunded') {
         continue;
       }
 
