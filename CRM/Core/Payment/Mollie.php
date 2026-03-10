@@ -578,6 +578,14 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * @param \Mollie\Api\Resources\Payment $molliePayment
    */
   protected function completeContribution(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
+    if ($this->financialTrxnExists($molliePayment->id)) {
+      $this->logDebug("FinancialTrxn for {$molliePayment->id} already exists, skipping (Contribution #{$contribution['id']})", [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_id' => $contribution['id'],
+      ]);
+      return;
+    }
+
     $params = [
       'contribution_id' => $contribution['id'],
       'total_amount' => $molliePayment->amount->value,
