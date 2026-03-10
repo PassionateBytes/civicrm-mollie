@@ -82,34 +82,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     return TRUE;
   }
 
-  /**
-   * Fields that can be edited on a recurring contribution.
-   *
-   * @return array
-   */
-  public function getEditableRecurringScheduleFields(): array {
-    return ['amount'];
-  }
-
-  /**
-   * No on-site payment form fields — Mollie handles payment collection.
-   *
-   * @return array
-   */
-  public function getPaymentFormFields(): array {
-    return [];
-  }
-
-  /**
-   * No billing address fields needed — address is collected on Mollie side.
-   *
-   * @param int $bltID
-   * @return array
-   */
-  public function getBillingAddressFields($bltID = NULL): array {
-    return [];
-  }
-
   // ---------------------------------------------------------------------------
   // Recurring lifecycle: cancel & amount change
   // ---------------------------------------------------------------------------
