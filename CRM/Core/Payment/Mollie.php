@@ -612,7 +612,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       'trxn_id' => $molliePayment->id,
       'trxn_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
       'payment_processor_id' => $this->_paymentProcessor['id'],
-      'is_send_contribution_notification' => $contribution['is_email_receipt'] ?? FALSE,
     ];
 
     // Mollie does not provide an explicit fee field. Fees are derived from
