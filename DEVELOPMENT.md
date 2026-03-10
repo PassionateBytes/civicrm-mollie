@@ -10,7 +10,7 @@ Developer documentation for the Mollie Payment Processor CiviCRM extension (`nl.
 - **Mollie-managed recurring** — Mollie's Subscriptions API handles scheduling and charging. CiviCRM does not trigger recurring payments; Mollie does, and notifies CiviCRM via webhooks.
 - **Mollie as source of truth** — for all subscription-managed fields (status, next charge date, amount). The sync job reconciles CiviCRM state from Mollie, not the other way around.
 - **Webhook-driven status updates** — contribution status is always determined by fetching the full payment from Mollie's API after receiving a webhook. The redirect return URL is never used to determine payment outcome.
-- **Idempotent webhook handling** — the handler checks `trxn_id` existence before creating contributions, making it safe to receive duplicate webhook calls.
+- **Idempotent webhook handling** — multiple layers of protection against duplicate processing: contribution status checks, `FinancialTrxn.trxn_id` existence checks in `completeContribution()`, `handleChargeback()`, and `handleRefund()`, and `Contribution.trxn_id` existence checks for recurring installments.
 - **Minimal custom schema** — one custom entity (`MollieCustomer`) maps contacts to Mollie customer IDs. All other Mollie references use standard CiviCRM fields:
   - `ContributionRecur.processor_id` — Mollie subscription ID
   - `PaymentToken` — Mollie mandate ID
@@ -40,7 +40,7 @@ Developer documentation for the Mollie Payment Processor CiviCRM extension (`nl.
 9. Look up Contribution by `trxn_id`
 10. Check for chargebacks first (see below)
 11. Idempotency check — skip if Contribution is already Completed
-12. **If paid**: call `Payment.create` (APIv3) to record the payment and transition the contribution to Completed, recording fee amount from settlement data
+12. **If paid**: `completeContribution()` checks for existing `FinancialTrxn` by Mollie payment ID (defense-in-depth against concurrent webhooks), then calls `Payment.create` (APIv3) to record the payment and transition the contribution to Completed, recording fee amount from settlement data
 13. **If failed/cancelled/expired**: mark Contribution as Failed or Cancelled
 
 #### Recurring Payment — First Payment
@@ -143,7 +143,8 @@ The template also supports Smarty syntax for conditional logic. The default temp
 
 - Translation: user-facing strings wrapped in `E::ts()`
 - Logging: `\Civi::log('mollie')` with PSR-3 levels
-- Mixins: `entity-types-php@2.0`, `mgd-php@1.0`, `setting-php@1.0`, `menu-xml@1.0`, `scan-classes@1.0`, `smarty-v2@1.0`
+- Mixins: `entity-types-php@2.0`, `mgd-php@2.0`, `setting-php@1.0`, `menu-xml@1.0`, `scan-classes@1.0`, `smarty@1.0`
+- Schema management: `CiviMix\Schema\Mollie\AutomaticUpgrader` handles table creation/deletion from `schema/*.entityType.php` files. The custom `CRM_Mollie_Upgrader` class is reserved for `upgrade_NNNN()` migration steps only.
 
 ### Mollie API Quick Reference
 

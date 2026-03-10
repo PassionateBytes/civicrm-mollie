@@ -578,6 +578,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * @param \Mollie\Api\Resources\Payment $molliePayment
    */
   protected function completeContribution(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
+    // Defense-in-depth: Payment.create has no unique constraint on trxn_id,
+    // so duplicate calls would create duplicate FinancialTrxn records.
+    // The caller checks contribution status, but a race between concurrent
+    // webhooks could bypass that. This guards at the financial transaction level.
     if ($this->financialTrxnExists($molliePayment->id)) {
       $this->logDebug("FinancialTrxn for {$molliePayment->id} already exists, skipping (Contribution #{$contribution['id']})", [
         'mollie_payment_id' => $molliePayment->id,
