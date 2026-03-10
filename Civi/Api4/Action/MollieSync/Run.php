@@ -154,7 +154,7 @@ class Run extends AbstractAction {
         $updates['end_date'] = $updates['cancel_date'];
         $updates['next_sched_contribution_date'] = NULL;
       }
-      if ($newStatus === 'Failed') {
+      if ($newStatus === 'Failed' || $newStatus === 'Pending') {
         $updates['next_sched_contribution_date'] = NULL;
       }
     }
@@ -249,6 +249,7 @@ class Run extends AbstractAction {
       'completed' => 'Completed',
       'canceled' => 'Cancelled',
       'suspended' => 'Failed',
+      'paused' => 'Pending',
       'active', 'pending' => NULL,
       default => NULL,
     };
