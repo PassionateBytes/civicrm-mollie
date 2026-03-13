@@ -175,14 +175,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ->execute()
       ->first();
 
-    // Mollie does not support changing the number of installments on an
-    // existing subscription. Block the update if installments changed.
-    $newInstallments = isset($params['installments']) ? (int) $params['installments'] : NULL;
-    $oldInstallments = isset($recur['installments']) ? (int) $recur['installments'] : NULL;
-    if ($newInstallments !== $oldInstallments) {
-      throw new PaymentProcessorException(E::ts('The number of installments cannot be changed on a Mollie subscription. Cancel this subscription and create a new one instead.'));
-    }
-
     if (empty($recur['processor_id'])) {
       throw new PaymentProcessorException(E::ts('No Mollie subscription ID found for this recurring contribution.'));
     }
@@ -192,21 +184,48 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       throw new PaymentProcessorException(E::ts('No Mollie customer found for this contact.'));
     }
 
-    try {
-      $this->getMollieApiClient()->subscriptions->update($mollieCustomer, $recur['processor_id'], [
-        'amount' => [
-          'currency' => $recur['currency'],
-          'value' => number_format((float) $newAmount, 2, '.', ''),
-        ],
-      ]);
+    $updateData = [
+      'amount' => [
+        'currency' => $recur['currency'],
+        'value' => number_format((float) $newAmount, 2, '.', ''),
+      ],
+    ];
 
-      $this->logInfo("Mollie subscription {$recur['processor_id']} amount updated to {$newAmount} (ContributionRecur #{$recurId})", [
+    // Sync installment count to Mollie's `times` parameter if changed.
+    // Mollie `times` is the total number of subscription payments (excluding
+    // the initial first payment which created the mandate).
+    $newInstallments = isset($params['installments']) ? (int) $params['installments'] : NULL;
+    $oldInstallments = isset($recur['installments']) ? (int) $recur['installments'] : NULL;
+    $installmentsChanged = $newInstallments !== $oldInstallments;
+    if ($installmentsChanged) {
+      $wasFinite = $oldInstallments !== NULL && $oldInstallments > 0;
+      $becomesOpenEnded = $newInstallments === NULL || $newInstallments <= 0;
+      if ($wasFinite && $becomesOpenEnded) {
+        // Mollie's PATCH endpoint silently ignores null and rejects 0 for
+        // `times`, so a finite subscription cannot be made open-ended.
+        throw new PaymentProcessorException(E::ts('A subscription with a fixed number of installments cannot be changed to open-ended on Mollie.'));
+      }
+      if ($newInstallments !== NULL && $newInstallments <= 1) {
+        throw new PaymentProcessorException(E::ts('Installments must be at least 2 for a subscription.'));
+      }
+      $updateData['times'] = $newInstallments - 1;
+    }
+
+    try {
+      $this->getMollieApiClient()->subscriptions->update($mollieCustomer, $recur['processor_id'], $updateData);
+
+      $changes = ["amount={$newAmount}"];
+      if ($installmentsChanged) {
+        $changes[] = "installments={$newInstallments}";
+      }
+      $this->logInfo("Mollie subscription {$recur['processor_id']} updated: " . implode(', ', $changes) . " (ContributionRecur #{$recurId})", [
         'subscription_id' => $recur['processor_id'],
         'contribution_recur_id' => $recurId,
         'new_amount' => $newAmount,
+        'new_installments' => $newInstallments,
       ]);
 
-      $message = E::ts('Subscription amount updated on Mollie.');
+      $message = E::ts('Subscription updated on Mollie.');
       return TRUE;
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
