@@ -279,6 +279,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     $propertyBag = PropertyBag::cast($params);
     $this->_component = $component;
 
+    // Zero-amount payments complete immediately without contacting Mollie.
+    // This means recurring series must start with a real charge — the first
+    // payment creates the mandate via Mollie checkout. A zero-amount "authorize
+    // now, charge later" flow is currently not supported by this extension.
     if ($propertyBag->getAmount() == 0) {
       return $this->setStatusPaymentCompleted([]);
     }

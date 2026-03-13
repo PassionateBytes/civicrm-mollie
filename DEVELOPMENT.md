@@ -27,7 +27,7 @@ Developer documentation for the Mollie Payment Processor CiviCRM extension (`nl.
 **Initiation** (`doPayment()`, non-recurring):
 
 1. CiviCRM creates a pending Contribution and calls `doPayment()`
-2. Zero-amount check — if amount is 0, mark Completed immediately (no Mollie interaction)
+2. Zero-amount check — if amount is 0, mark Completed immediately (no Mollie interaction; see [Zero-Amount Payments and Recurring](#zero-amount-payments-and-recurring))
 3. Build Mollie payment params (amount, currency, description, webhookUrl, redirectUrl, locale)
 4. `POST /v2/payments` — create Mollie payment
 5. Store Mollie payment ID in `Contribution.trxn_id`
@@ -194,4 +194,17 @@ make            # Run all three in sequence
 - Never log full API keys — only the last 4 characters
 - All Mollie API calls must be wrapped in try/catch for `\Mollie\Api\Exceptions\ApiException`
 - Zero-amount contributions are handled without Mollie interaction
+
+### Zero-Amount Payments and Recurring
+
+Zero-amount payments (`amount == 0`) short-circuit in `doPayment()` and complete immediately without contacting Mollie. This applies to both one-off and recurring payments.
+
+For recurring series, this means the extension assumes the first payment always carries a real charge. The first payment's Mollie checkout creates the mandate (payment authorization), and the subscription is created afterward with `times = installments - 1` (subtracting the first payment).
+
+Regarding a potential "authorize now, charge later" flow (where a €0.00 first payment creates a mandate without charging, followed by a subscription at a different amount):  
+This is currently **not supported**. Implementing this would require:
+
+1. Bypassing the zero-amount short-circuit for recurring payments (so Mollie checkout still runs)
+2. Revisiting the `times = installments - 1` logic (since the €0.00 payment wouldn't count as a real installment)
+3. Handling the case where `installments` on the subscription equals the full count rather than count minus one
 
