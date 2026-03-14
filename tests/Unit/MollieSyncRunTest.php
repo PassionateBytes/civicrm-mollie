@@ -1,6 +1,7 @@
 <?php
 
 // Override sleep() in the Run class's namespace to avoid real delays.
+
 namespace Civi\Api4\Action\MollieSync {
 
   function sleep(int $seconds): int {
@@ -21,7 +22,6 @@ namespace Tests\Unit {
    * Test subclass to expose protected methods.
    */
   class TestableMollieSyncRun extends Run {
-
     public function __construct() {
       // Skip parent constructor.
     }
@@ -42,12 +42,11 @@ namespace Tests\Unit {
    * without requiring real CiviCRM API calls.
    */
   class IntegrationTestableSyncRun extends Run {
-
     /** @var array<int, string> Map of contact_id → mollie_customer_id. */
     public static array $customerMap = [];
 
     /** @var MollieApiClient|null Shared mock client. */
-    public static ?MollieApiClient $mockClient = NULL;
+    public static ?MollieApiClient $mockClient = null;
 
     public function __construct() {
       parent::__construct('MollieSync', 'run');
@@ -60,7 +59,7 @@ namespace Tests\Unit {
     }
 
     protected static function getMollieCustomerId(int $contactId, int $processorId): ?string {
-      return self::$customerMap[$contactId] ?? NULL;
+      return self::$customerMap[$contactId] ?? null;
     }
 
     protected static function getClientForProcessor(int $processorId): MollieApiClient {
@@ -73,12 +72,11 @@ namespace Tests\Unit {
 
     public static function reset(): void {
       self::$customerMap = [];
-      self::$mockClient = NULL;
+      self::$mockClient = null;
     }
   }
 
   class MollieSyncRunTest extends TestCase {
-
     /** @var int[] */
     public static array $sleepCalls = [];
 
@@ -111,7 +109,7 @@ namespace Tests\Unit {
         'status' => 'active',
         'nextPaymentDate' => '2026-04-01',
         'amount' => $this->makeAmount('25.00'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
       $recur = [
         'contribution_status_id:name' => 'In Progress',
@@ -128,9 +126,9 @@ namespace Tests\Unit {
     public function testBuildUpdatesStatusCompleted(): void {
       $sub = $this->makeSubscription([
         'status' => 'completed',
-        'nextPaymentDate' => NULL,
+        'nextPaymentDate' => null,
         'amount' => $this->makeAmount('25.00'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
       $recur = [
         'contribution_status_id:name' => 'In Progress',
@@ -149,7 +147,7 @@ namespace Tests\Unit {
     public function testBuildUpdatesStatusCanceledWithDate(): void {
       $sub = $this->makeSubscription([
         'status' => 'canceled',
-        'nextPaymentDate' => NULL,
+        'nextPaymentDate' => null,
         'amount' => $this->makeAmount('25.00'),
         'canceledAt' => '2026-03-01T10:00:00+00:00',
       ]);
@@ -171,13 +169,13 @@ namespace Tests\Unit {
     public function testBuildUpdatesStatusCanceledWithoutDate(): void {
       $sub = $this->makeSubscription([
         'status' => 'canceled',
-        'nextPaymentDate' => NULL,
+        'nextPaymentDate' => null,
         'amount' => $this->makeAmount('25.00'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
       $recur = [
         'contribution_status_id:name' => 'In Progress',
-        'next_sched_contribution_date' => NULL,
+        'next_sched_contribution_date' => null,
         'amount' => '25.00',
       ];
 
@@ -191,9 +189,9 @@ namespace Tests\Unit {
     public function testBuildUpdatesStatusSuspended(): void {
       $sub = $this->makeSubscription([
         'status' => 'suspended',
-        'nextPaymentDate' => NULL,
+        'nextPaymentDate' => null,
         'amount' => $this->makeAmount('25.00'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
       $recur = [
         'contribution_status_id:name' => 'In Progress',
@@ -213,11 +211,11 @@ namespace Tests\Unit {
         'status' => 'active',
         'nextPaymentDate' => '2026-04-15',
         'amount' => $this->makeAmount('25.00'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
       $recur = [
         'contribution_status_id:name' => 'Failed',
-        'next_sched_contribution_date' => NULL,
+        'next_sched_contribution_date' => null,
         'amount' => '25.00',
       ];
 
@@ -237,7 +235,7 @@ namespace Tests\Unit {
         'status' => 'active',
         'nextPaymentDate' => '2026-05-01',
         'amount' => $this->makeAmount('25.00'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
       $recur = [
         'contribution_status_id:name' => 'In Progress',
@@ -257,7 +255,7 @@ namespace Tests\Unit {
         'status' => 'active',
         'nextPaymentDate' => '2026-04-01',
         'amount' => $this->makeAmount('50.00'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
       $recur = [
         'contribution_status_id:name' => 'In Progress',
@@ -276,7 +274,7 @@ namespace Tests\Unit {
         'status' => 'active',
         'nextPaymentDate' => '2026-04-01',
         'amount' => $this->makeAmount('10.0'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
       $recur = [
         'contribution_status_id:name' => 'In Progress',
@@ -295,7 +293,7 @@ namespace Tests\Unit {
         'status' => 'completed',
         'nextPaymentDate' => '2026-05-01',
         'amount' => $this->makeAmount('25.00'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
       $recur = [
         'contribution_status_id:name' => 'In Progress',
@@ -314,7 +312,7 @@ namespace Tests\Unit {
     // -----------------------------------------------------------------------
 
     public function testThrottledApiCallSuccess(): void {
-      $result = TestableMollieSyncRun::exposedThrottledApiCall(fn() => 'ok');
+      $result = TestableMollieSyncRun::exposedThrottledApiCall(fn () => 'ok');
 
       $this->assertSame('ok', $result);
       $this->assertSame([], self::$sleepCalls);
@@ -344,8 +342,7 @@ namespace Tests\Unit {
           throw new ApiException('rate limited', 429);
         });
         $this->fail('Expected ApiException');
-      }
-      catch (ApiException) {
+      } catch (ApiException) {
         // 4 total attempts: initial + 3 retries.
         $this->assertSame(4, $attempts);
         $this->assertCount(3, self::$sleepCalls);
@@ -379,8 +376,8 @@ namespace Tests\Unit {
         'next_sched_contribution_date' => '2026-04-01 00:00:00',
         'amount' => '25.00',
         'currency' => 'EUR',
-        'end_date' => NULL,
-        'cancel_date' => NULL,
+        'end_date' => null,
+        'cancel_date' => null,
       ]]);
 
       IntegrationTestableSyncRun::$customerMap = [100 => 'cst_test'];
@@ -390,7 +387,7 @@ namespace Tests\Unit {
         'status' => 'active',
         'nextPaymentDate' => '2026-05-01',
         'amount' => $this->makeAmount('30.00'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
 
       $mockSubEndpoint = $this->createMock(\Mollie\Api\Endpoints\SubscriptionEndpoint::class);
@@ -407,8 +404,10 @@ namespace Tests\Unit {
       $this->assertEquals(1, $stats['synced']);
 
       // Verify ContributionRecur was updated.
-      $updates = array_values(array_filter(\Tests\Stubs\Api4Mock::$calls, fn($c) =>
-        $c['entity'] === 'ContributionRecur' && $c['action'] === 'update'
+      $updates = array_values(array_filter(
+        \Tests\Stubs\Api4Mock::$calls,
+        fn ($c) =>
+        $c['entity'] === 'ContributionRecur' && $c['action'] === 'update',
       ));
       $this->assertNotEmpty($updates);
       $this->assertEquals('30.00', $updates[0]['values']['amount']);
@@ -428,8 +427,8 @@ namespace Tests\Unit {
         'next_sched_contribution_date' => '2026-04-01 00:00:00',
         'amount' => '25.00',
         'currency' => 'EUR',
-        'end_date' => NULL,
-        'cancel_date' => NULL,
+        'end_date' => null,
+        'cancel_date' => null,
       ]]);
 
       // No customer mapping → should skip.
@@ -455,8 +454,8 @@ namespace Tests\Unit {
         'next_sched_contribution_date' => '2026-04-01 00:00:00',
         'amount' => '25.00',
         'currency' => 'EUR',
-        'end_date' => NULL,
-        'cancel_date' => NULL,
+        'end_date' => null,
+        'cancel_date' => null,
       ]]);
 
       IntegrationTestableSyncRun::$customerMap = [100 => 'cst_test'];
@@ -490,17 +489,17 @@ namespace Tests\Unit {
         'next_sched_contribution_date' => '2026-04-01 00:00:00',
         'amount' => '25.00',
         'currency' => 'EUR',
-        'end_date' => NULL,
-        'cancel_date' => NULL,
+        'end_date' => null,
+        'cancel_date' => null,
       ]]);
 
       IntegrationTestableSyncRun::$customerMap = [100 => 'cst_test'];
 
       $sub = $this->makeSubscription([
         'status' => 'completed',
-        'nextPaymentDate' => NULL,
+        'nextPaymentDate' => null,
         'amount' => $this->makeAmount('25.00'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
 
       $mockSubEndpoint = $this->createMock(\Mollie\Api\Endpoints\SubscriptionEndpoint::class);
@@ -516,8 +515,10 @@ namespace Tests\Unit {
       $this->assertEquals(1, $stats['synced']);
       $this->assertEquals(1, $stats['completed']);
 
-      $updates = array_values(array_filter(\Tests\Stubs\Api4Mock::$calls, fn($c) =>
-        $c['entity'] === 'ContributionRecur' && $c['action'] === 'update'
+      $updates = array_values(array_filter(
+        \Tests\Stubs\Api4Mock::$calls,
+        fn ($c) =>
+        $c['entity'] === 'ContributionRecur' && $c['action'] === 'update',
       ));
       $this->assertEquals('Completed', $updates[0]['values']['contribution_status_id:name']);
       $this->assertNull($updates[0]['values']['next_sched_contribution_date']);
@@ -537,11 +538,11 @@ namespace Tests\Unit {
         'contact_id' => 300,
         'payment_processor_id' => 1,
         'contribution_status_id:name' => 'Failed',
-        'next_sched_contribution_date' => NULL,
+        'next_sched_contribution_date' => null,
         'amount' => '25.00',
         'currency' => 'EUR',
-        'end_date' => NULL,
-        'cancel_date' => NULL,
+        'end_date' => null,
+        'cancel_date' => null,
       ];
 
       // The Failed status is filtered by WHERE clauses in the mock:
@@ -556,7 +557,7 @@ namespace Tests\Unit {
         'status' => 'active',
         'nextPaymentDate' => '2026-04-15',
         'amount' => $this->makeAmount('25.00'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
 
       $mockSubEndpoint = $this->createMock(\Mollie\Api\Endpoints\SubscriptionEndpoint::class);
@@ -572,8 +573,10 @@ namespace Tests\Unit {
       $this->assertEquals(0, $stats['checked']);
       $this->assertEquals(1, $stats['suspensions_recovered']);
 
-      $updates = array_values(array_filter(\Tests\Stubs\Api4Mock::$calls, fn($c) =>
-        $c['entity'] === 'ContributionRecur' && $c['action'] === 'update'
+      $updates = array_values(array_filter(
+        \Tests\Stubs\Api4Mock::$calls,
+        fn ($c) =>
+        $c['entity'] === 'ContributionRecur' && $c['action'] === 'update',
       ));
       $this->assertNotEmpty($updates);
       $this->assertEquals('In Progress', $updates[0]['values']['contribution_status_id:name']);
@@ -590,11 +593,11 @@ namespace Tests\Unit {
         'contact_id' => 300,
         'payment_processor_id' => 1,
         'contribution_status_id:name' => 'Failed',
-        'next_sched_contribution_date' => NULL,
+        'next_sched_contribution_date' => null,
         'amount' => '25.00',
         'currency' => 'EUR',
-        'end_date' => NULL,
-        'cancel_date' => NULL,
+        'end_date' => null,
+        'cancel_date' => null,
       ]]);
 
       IntegrationTestableSyncRun::$customerMap = [300 => 'cst_suspended'];
@@ -602,9 +605,9 @@ namespace Tests\Unit {
       // Subscription is still suspended on Mollie.
       $sub = $this->makeSubscription([
         'status' => 'suspended',
-        'nextPaymentDate' => NULL,
+        'nextPaymentDate' => null,
         'amount' => $this->makeAmount('25.00'),
-        'canceledAt' => NULL,
+        'canceledAt' => null,
       ]);
 
       $mockSubEndpoint = $this->createMock(\Mollie\Api\Endpoints\SubscriptionEndpoint::class);
@@ -619,8 +622,10 @@ namespace Tests\Unit {
 
       $this->assertEquals(0, $stats['suspensions_recovered']);
 
-      $updates = array_values(array_filter(\Tests\Stubs\Api4Mock::$calls, fn($c) =>
-        $c['entity'] === 'ContributionRecur' && $c['action'] === 'update'
+      $updates = array_values(array_filter(
+        \Tests\Stubs\Api4Mock::$calls,
+        fn ($c) =>
+        $c['entity'] === 'ContributionRecur' && $c['action'] === 'update',
       ));
       $this->assertEmpty($updates);
     }
@@ -639,10 +644,10 @@ namespace Tests\Unit {
         'contact_id' => 200,
         'payment_processor_id' => 1,
         'contribution_status_id:name' => 'Cancelled',
-        'next_sched_contribution_date' => NULL,
+        'next_sched_contribution_date' => null,
         'amount' => '25.00',
         'currency' => 'EUR',
-        'end_date' => NULL,
+        'end_date' => null,
         'cancel_date' => '2026-03-10 00:00:00',
       ];
 

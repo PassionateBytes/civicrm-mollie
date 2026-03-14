@@ -2,13 +2,13 @@
 
 namespace Tests\Unit;
 
-use Mollie\Api\Endpoints\PaymentEndpoint;
+use Civi\Payment\Exception\PaymentProcessorException;
 use Mollie\Api\Endpoints\CustomerEndpoint;
+use Mollie\Api\Endpoints\PaymentEndpoint;
 use Mollie\Api\Exceptions\ApiException;
 use Mollie\Api\MollieApiClient;
 use Mollie\Api\Resources\Customer;
 use Mollie\Api\Resources\Payment;
-use Civi\Payment\Exception\PaymentProcessorException;
 use PHPUnit\Framework\TestCase;
 use Tests\Stubs\Api4Mock;
 
@@ -16,15 +16,14 @@ use Tests\Stubs\Api4Mock;
  * Test subclass that controls the Mollie API client and captures redirects.
  */
 class DoPaymentTestableMollie extends \CRM_Core_Payment_Mollie {
-
-  public ?MollieApiClient $stubbedMollieClient = NULL;
+  public ?MollieApiClient $stubbedMollieClient = null;
 
   /** @var string|null Captured redirect URL. */
-  public ?string $lastRedirectUrl = NULL;
+  public ?string $lastRedirectUrl = null;
 
   public function __construct(array $processorConfig = []) {
     $this->_paymentProcessor = array_merge(['id' => 1], $processorConfig);
-    $this->_mode = ($processorConfig['is_test'] ?? FALSE) ? 'test' : 'live';
+    $this->_mode = ($processorConfig['is_test'] ?? false) ? 'test' : 'live';
   }
 
   public function callDoPayment(array &$params, string $component = 'contribute'): array {
@@ -36,12 +35,11 @@ class DoPaymentTestableMollie extends \CRM_Core_Payment_Mollie {
   }
 
   protected function getMollieLocale(int $contactId): ?string {
-    return NULL;
+    return null;
   }
 }
 
 class MollieDoPaymentTest extends TestCase {
-
   protected function setUp(): void {
     Api4Mock::reset();
     \Api3Mock::reset();
@@ -79,7 +77,7 @@ class MollieDoPaymentTest extends TestCase {
       'contributionID' => 100,
       'contactID' => 200,
       'qfKey' => 'abc123',
-      'is_recur' => TRUE,
+      'is_recur' => true,
       'contributionRecurID' => 42,
     ];
 
@@ -115,7 +113,7 @@ class MollieDoPaymentTest extends TestCase {
         // Verify no recurring params.
         $this->assertArrayNotHasKey('sequenceType', $params);
         $this->assertArrayNotHasKey('customerId', $params);
-        return TRUE;
+        return true;
       }))
       ->willReturn($molliePayment);
 
@@ -132,8 +130,10 @@ class MollieDoPaymentTest extends TestCase {
     $processor->callDoPayment($params);
 
     // Verify trxn_id was stored via Api4 update.
-    $contributionUpdates = array_filter(Api4Mock::$calls, fn($c) =>
-      $c['entity'] === 'Contribution' && $c['action'] === 'update'
+    $contributionUpdates = array_filter(
+      Api4Mock::$calls,
+      fn ($c) =>
+      $c['entity'] === 'Contribution' && $c['action'] === 'update',
     );
     $this->assertNotEmpty($contributionUpdates);
     $update = array_values($contributionUpdates)[0];
@@ -170,7 +170,7 @@ class MollieDoPaymentTest extends TestCase {
         $this->assertEquals('first', $params['sequenceType']);
         $this->assertEquals('cst_existing', $params['customerId']);
         $this->assertEquals(42, $params['metadata']['civicrm']['contribution_recur_id']);
-        return TRUE;
+        return true;
       }))
       ->willReturn($molliePayment);
 
@@ -182,7 +182,7 @@ class MollieDoPaymentTest extends TestCase {
       'contributionID' => 101,
       'contactID' => 200,
       'qfKey' => 'abc123',
-      'is_recur' => TRUE,
+      'is_recur' => true,
       'contributionRecurID' => 42,
     ];
 
@@ -219,7 +219,7 @@ class MollieDoPaymentTest extends TestCase {
       ->with($this->callback(function (array $params) {
         $this->assertEquals('Test Donor', $params['name']);
         $this->assertEquals('donor@example.com', $params['email']);
-        return TRUE;
+        return true;
       }))
       ->willReturn($mollieCustomer);
 
@@ -229,7 +229,7 @@ class MollieDoPaymentTest extends TestCase {
       ->method('create')
       ->with($this->callback(function (array $params) {
         $this->assertEquals('cst_new', $params['customerId']);
-        return TRUE;
+        return true;
       }))
       ->willReturn($molliePayment);
 
@@ -241,15 +241,17 @@ class MollieDoPaymentTest extends TestCase {
       'contributionID' => 102,
       'contactID' => 200,
       'qfKey' => 'abc123',
-      'is_recur' => TRUE,
+      'is_recur' => true,
       'contributionRecurID' => 43,
     ];
 
     $processor->callDoPayment($params);
 
     // Verify MollieCustomer was created in CiviCRM.
-    $customerCreates = array_filter(Api4Mock::$calls, fn($c) =>
-      $c['entity'] === 'MollieCustomer' && $c['action'] === 'create'
+    $customerCreates = array_filter(
+      Api4Mock::$calls,
+      fn ($c) =>
+      $c['entity'] === 'MollieCustomer' && $c['action'] === 'create',
     );
     $this->assertNotEmpty($customerCreates);
     $create = array_values($customerCreates)[0];

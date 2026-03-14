@@ -2,8 +2,6 @@
 
 namespace Civi\Api4;
 
-use CRM_Mollie_ExtensionUtil as E;
-
 /**
  * Mollie recurring donation reminder utilities.
  *
@@ -14,7 +12,6 @@ use CRM_Mollie_ExtensionUtil as E;
  * @package Civi\Api4
  */
 class MollieRecurringReminder extends Generic\AbstractEntity {
-
   /**
    * Run the recurring reminder job.
    *
@@ -22,7 +19,7 @@ class MollieRecurringReminder extends Generic\AbstractEntity {
    *
    * @return Action\MollieRecurringReminder\Run
    */
-  public static function run(bool $checkPermissions = TRUE): Action\MollieRecurringReminder\Run {
+  public static function run(bool $checkPermissions = true): Action\MollieRecurringReminder\Run {
     return (new Action\MollieRecurringReminder\Run(__CLASS__, __FUNCTION__))
       ->setCheckPermissions($checkPermissions);
   }
@@ -32,7 +29,7 @@ class MollieRecurringReminder extends Generic\AbstractEntity {
    *
    * @return Generic\BasicGetFieldsAction
    */
-  public static function getFields(bool $checkPermissions = TRUE): Generic\BasicGetFieldsAction {
+  public static function getFields(bool $checkPermissions = true): Generic\BasicGetFieldsAction {
     return (new Generic\BasicGetFieldsAction(__CLASS__, __FUNCTION__, function () {
       return [];
     }))->setCheckPermissions($checkPermissions);

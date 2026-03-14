@@ -2,19 +2,18 @@
 
 namespace Tests\Unit;
 
+use Civi\Payment\Exception\PaymentProcessorException;
 use Mollie\Api\MollieApiClient;
 use Mollie\Api\Resources\Payment;
 use PHPUnit\Framework\TestCase;
-use Civi\Payment\Exception\PaymentProcessorException;
 
 /**
  * Test subclass to expose protected methods and control processor config.
  */
 class TestableMolliePayment extends \CRM_Core_Payment_Mollie {
-
   public function __construct(array $processorConfig = []) {
     $this->_paymentProcessor = $processorConfig;
-    $this->_mode = $processorConfig['is_test'] ?? FALSE ? 'test' : 'live';
+    $this->_mode = $processorConfig['is_test'] ?? false ? 'test' : 'live';
   }
 
   public function exposedCheckConfig(): ?string {
@@ -39,7 +38,6 @@ class TestableMolliePayment extends \CRM_Core_Payment_Mollie {
 }
 
 class MolliePaymentTest extends TestCase {
-
   // -----------------------------------------------------------------------
   // checkConfig
   // -----------------------------------------------------------------------
@@ -47,7 +45,7 @@ class MolliePaymentTest extends TestCase {
   public function testCheckConfigValidTestKey(): void {
     $payment = new TestableMolliePayment([
       'user_name' => 'test_abc123',
-      'is_test' => TRUE,
+      'is_test' => true,
     ]);
     $this->assertNull($payment->exposedCheckConfig());
   }
@@ -55,7 +53,7 @@ class MolliePaymentTest extends TestCase {
   public function testCheckConfigEmptyKey(): void {
     $payment = new TestableMolliePayment([
       'user_name' => '',
-      'is_test' => TRUE,
+      'is_test' => true,
     ]);
     $result = $payment->exposedCheckConfig();
     $this->assertNotNull($result);
@@ -65,7 +63,7 @@ class MolliePaymentTest extends TestCase {
   public function testCheckConfigTestKeyInLiveMode(): void {
     $payment = new TestableMolliePayment([
       'user_name' => 'test_abc123',
-      'is_test' => FALSE,
+      'is_test' => false,
     ]);
     $result = $payment->exposedCheckConfig();
     $this->assertNotNull($result);
@@ -134,7 +132,7 @@ class MolliePaymentTest extends TestCase {
   public function testCalculateNextDateNullDate(): void {
     $payment = new TestableMolliePayment();
     $this->assertNull($payment->exposedCalculateNextScheduledDate([
-      'next_sched_contribution_date' => NULL,
+      'next_sched_contribution_date' => null,
     ]));
   }
 
@@ -216,8 +214,8 @@ class MolliePaymentTest extends TestCase {
     $payment = new Payment($client);
     $payment->id = $props['id'] ?? 'tr_test123';
     $payment->status = $props['status'] ?? 'failed';
-    $payment->method = $props['method'] ?? NULL;
-    $payment->details = $props['details'] ?? NULL;
+    $payment->method = $props['method'] ?? null;
+    $payment->details = $props['details'] ?? null;
     return $payment;
   }
 

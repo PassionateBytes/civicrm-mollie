@@ -7,9 +7,9 @@
  * extension.
  */
 class CRM_Mollie_ExtensionUtil {
-  const SHORT_NAME = 'mollie';
-  const LONG_NAME = 'com.passionate-bytes.mollie';
-  const CLASS_PREFIX = 'CRM_Mollie';
+  public const SHORT_NAME = 'mollie';
+  public const LONG_NAME = 'com.passionate-bytes.mollie';
+  public const CLASS_PREFIX = 'CRM_Mollie';
 
   /**
    * Translate a string using the extension's domain.
@@ -26,7 +26,7 @@ class CRM_Mollie_ExtensionUtil {
    */
   public static function ts($text, $params = []): string {
     if (!array_key_exists('domain', $params)) {
-      $params['domain'] = [self::LONG_NAME, NULL];
+      $params['domain'] = [self::LONG_NAME, null];
     }
     return ts($text, $params);
   }
@@ -41,8 +41,8 @@ class CRM_Mollie_ExtensionUtil {
    *   Ex: 'http://example.org/sites/default/ext/org.example.foo'.
    *   Ex: 'http://example.org/sites/default/ext/org.example.foo/css/foo.css'.
    */
-  public static function url($file = NULL): string {
-    if ($file === NULL) {
+  public static function url($file = null): string {
+    if ($file === null) {
       return rtrim(CRM_Core_Resources::singleton()->getUrl(self::LONG_NAME), '/');
     }
     return CRM_Core_Resources::singleton()->getUrl(self::LONG_NAME, $file);
@@ -58,9 +58,9 @@ class CRM_Mollie_ExtensionUtil {
    *   Ex: '/var/www/example.org/sites/default/ext/org.example.foo'.
    *   Ex: '/var/www/example.org/sites/default/ext/org.example.foo/css/foo.css'.
    */
-  public static function path($file = NULL) {
+  public static function path($file = null) {
     // return CRM_Core_Resources::singleton()->getPath(self::LONG_NAME, $file);
-    return __DIR__ . ($file === NULL ? '' : (DIRECTORY_SEPARATOR . $file));
+    return __DIR__ . ($file === null ? '' : (DIRECTORY_SEPARATOR . $file));
   }
 
   /**
@@ -80,7 +80,7 @@ class CRM_Mollie_ExtensionUtil {
    */
   public static function schema() {
     if (!isset($GLOBALS['CiviMixSchema'])) {
-      pathload()->loadPackage('civimix-schema@5', TRUE);
+      pathload()->loadPackage('civimix-schema@5', true);
     }
     return $GLOBALS['CiviMixSchema']->getHelper(static::LONG_NAME);
   }
@@ -90,15 +90,14 @@ class CRM_Mollie_ExtensionUtil {
 use CRM_Mollie_ExtensionUtil as E;
 
 pathload()->addSearchDir(__DIR__ . '/mixin/lib');
-spl_autoload_register('_mollie_civix_class_loader', TRUE, TRUE);
+spl_autoload_register('_mollie_civix_class_loader', true, true);
 
 function _mollie_civix_class_loader($class) {
   if ($class === 'CRM_Mollie_DAO_Base') {
     if (version_compare(CRM_Utils_System::version(), '5.74.beta', '>=')) {
       class_alias('CRM_Core_DAO_Base', 'CRM_Mollie_DAO_Base');
       // ^^ Materialize concrete names -- encourage IDE's to pick up on this association.
-    }
-    else {
+    } else {
       $realClass = 'CiviMix\\Schema\\Mollie\\DAO';
       class_alias($realClass, $class);
       // ^^ Abstract names -- discourage IDE's from picking up on this association.
@@ -110,7 +109,7 @@ function _mollie_civix_class_loader($class) {
   if (strpos($class, 'CiviMix\\Schema\\Mollie\\') === 0) {
     // civimix-schema@5 is designed for backported use in download/activation workflows,
     // where new revisions may become dynamically available.
-    pathload()->loadPackage('civimix-schema@5', TRUE);
+    pathload()->loadPackage('civimix-schema@5', true);
     CiviMix\Schema\loadClass($class);
   }
 }
@@ -120,12 +119,12 @@ function _mollie_civix_class_loader($class) {
  *
  * @link https://docs.civicrm.org/dev/en/latest/hooks/hook_civicrm_config
  */
-function _mollie_civix_civicrm_config($config = NULL) {
-  static $configured = FALSE;
+function _mollie_civix_civicrm_config($config = null) {
+  static $configured = false;
   if ($configured) {
     return;
   }
-  $configured = TRUE;
+  $configured = true;
 
   $extRoot = __DIR__ . DIRECTORY_SEPARATOR;
   $include_path = $extRoot . PATH_SEPARATOR . get_include_path();
@@ -169,15 +168,14 @@ function _mollie_civix_insert_navigation_menu(&$menu, $path, $item) {
   if (empty($path)) {
     $menu[] = [
       'attributes' => array_merge([
-        'label' => $item['name'] ?? NULL,
+        'label' => $item['name'] ?? null,
         'active' => 1,
       ], $item),
     ];
-    return TRUE;
-  }
-  else {
+    return true;
+  } else {
     // Find an recurse into the next level down
-    $found = FALSE;
+    $found = false;
     $path = explode('/', $path);
     $first = array_shift($path);
     foreach ($menu as $key => &$entry) {
@@ -207,18 +205,18 @@ function _mollie_civix_navigationMenu(&$nodes) {
  */
 function _mollie_civix_fixNavigationMenu(&$nodes) {
   $maxNavID = 1;
-  array_walk_recursive($nodes, function($item, $key) use (&$maxNavID) {
+  array_walk_recursive($nodes, function ($item, $key) use (&$maxNavID) {
     if ($key === 'navID') {
       $maxNavID = max($maxNavID, $item);
     }
   });
-  _mollie_civix_fixNavigationMenuItems($nodes, $maxNavID, NULL);
+  _mollie_civix_fixNavigationMenuItems($nodes, $maxNavID, null);
 }
 
 function _mollie_civix_fixNavigationMenuItems(&$nodes, &$maxNavID, $parentID) {
   $origKeys = array_keys($nodes);
   foreach ($origKeys as $origKey) {
-    if (!isset($nodes[$origKey]['attributes']['parentID']) && $parentID !== NULL) {
+    if (!isset($nodes[$origKey]['attributes']['parentID']) && $parentID !== null) {
       $nodes[$origKey]['attributes']['parentID'] = $parentID;
     }
     // If no navID, then assign navID and fix key.

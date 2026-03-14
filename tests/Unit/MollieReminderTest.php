@@ -14,9 +14,8 @@ use Tests\Stubs\Api4Mock;
  * recordReminderActivity) use self:: and run against Api4Mock stubs.
  */
 class TestableReminderRun extends Run {
-
   /** @var bool Whether sendReminder should throw. */
-  public static bool $sendShouldFail = FALSE;
+  public static bool $sendShouldFail = false;
 
   /** @var array Captured sendReminder calls. */
   public static array $sendCalls = [];
@@ -39,13 +38,12 @@ class TestableReminderRun extends Run {
   }
 
   public static function reset(): void {
-    self::$sendShouldFail = FALSE;
+    self::$sendShouldFail = false;
     self::$sendCalls = [];
   }
 }
 
 class MollieReminderTest extends TestCase {
-
   private TestableReminderRun $runner;
 
   protected function setUp(): void {
@@ -66,7 +64,7 @@ class MollieReminderTest extends TestCase {
   // -----------------------------------------------------------------------
 
   public function testDisabledSettingSkipsEverything(): void {
-    \CiviSettingsMock::$values['mollie_reminder_enabled'] = FALSE;
+    \CiviSettingsMock::$values['mollie_reminder_enabled'] = false;
 
     $stats = $this->runner->callRun();
 
@@ -80,7 +78,7 @@ class MollieReminderTest extends TestCase {
   // -----------------------------------------------------------------------
 
   public function testSendsReminderForUpcomingCharge(): void {
-    \CiviSettingsMock::$values['mollie_reminder_enabled'] = TRUE;
+    \CiviSettingsMock::$values['mollie_reminder_enabled'] = true;
     \CiviSettingsMock::$values['mollie_reminder_days_before'] = 7;
 
     $nextDate = (new \DateTime('+3 days'))->format('Y-m-d');
@@ -109,8 +107,10 @@ class MollieReminderTest extends TestCase {
     $this->assertEquals('donor@example.com', TestableReminderRun::$sendCalls[0]['contact']['email_primary.email']);
 
     // Activity should be recorded.
-    $activityCreates = array_filter(Api4Mock::$calls, fn($c) =>
-      $c['entity'] === 'Activity' && $c['action'] === 'create'
+    $activityCreates = array_filter(
+      Api4Mock::$calls,
+      fn ($c) =>
+      $c['entity'] === 'Activity' && $c['action'] === 'create',
     );
     $this->assertNotEmpty($activityCreates);
   }
@@ -120,7 +120,7 @@ class MollieReminderTest extends TestCase {
   // -----------------------------------------------------------------------
 
   public function testSkipsWhenReminderAlreadySent(): void {
-    \CiviSettingsMock::$values['mollie_reminder_enabled'] = TRUE;
+    \CiviSettingsMock::$values['mollie_reminder_enabled'] = true;
     \CiviSettingsMock::$values['mollie_reminder_days_before'] = 7;
 
     // Stub: existing activity means reminder already sent.
@@ -144,7 +144,7 @@ class MollieReminderTest extends TestCase {
   // -----------------------------------------------------------------------
 
   public function testSkipsContactWithoutEmail(): void {
-    \CiviSettingsMock::$values['mollie_reminder_enabled'] = TRUE;
+    \CiviSettingsMock::$values['mollie_reminder_enabled'] = true;
     \CiviSettingsMock::$values['mollie_reminder_days_before'] = 7;
 
     $nextDate = (new \DateTime('+3 days'))->format('Y-m-d');
@@ -167,9 +167,9 @@ class MollieReminderTest extends TestCase {
   // -----------------------------------------------------------------------
 
   public function testSendFailureCountsAsError(): void {
-    \CiviSettingsMock::$values['mollie_reminder_enabled'] = TRUE;
+    \CiviSettingsMock::$values['mollie_reminder_enabled'] = true;
     \CiviSettingsMock::$values['mollie_reminder_days_before'] = 7;
-    TestableReminderRun::$sendShouldFail = TRUE;
+    TestableReminderRun::$sendShouldFail = true;
 
     $nextDate = (new \DateTime('+3 days'))->format('Y-m-d');
     Api4Mock::setResult('ContributionRecur.get', [
@@ -186,8 +186,10 @@ class MollieReminderTest extends TestCase {
     $this->assertEquals(1, $stats['errors']);
 
     // Activity should NOT be recorded on failure.
-    $activityCreates = array_filter(Api4Mock::$calls, fn($c) =>
-      $c['entity'] === 'Activity' && $c['action'] === 'create'
+    $activityCreates = array_filter(
+      Api4Mock::$calls,
+      fn ($c) =>
+      $c['entity'] === 'Activity' && $c['action'] === 'create',
     );
     $this->assertEmpty($activityCreates);
   }

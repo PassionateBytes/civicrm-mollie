@@ -9,31 +9,57 @@
 
 namespace Civi\Api4\Generic {
   abstract class AbstractAction {
-    public function __construct(string $entityName = '', string $actionName = '') {}
-    public function setCheckPermissions(bool $check): static { return $this; }
+    public function __construct(string $entityName = '', string $actionName = '') {
+    }
+    public function setCheckPermissions(bool $check): static {
+      return $this;
+    }
   }
 
   class Result implements \ArrayAccess, \Iterator, \Countable {
     private array $data = [];
     private int $pos = 0;
 
-    public function offsetExists(mixed $offset): bool { return isset($this->data[$offset]); }
-    public function offsetGet(mixed $offset): mixed { return $this->data[$offset] ?? NULL; }
-    public function offsetSet(mixed $offset, mixed $value): void {
-      if ($offset === NULL) { $this->data[] = $value; } else { $this->data[$offset] = $value; }
+    public function offsetExists(mixed $offset): bool {
+      return isset($this->data[$offset]);
     }
-    public function offsetUnset(mixed $offset): void { unset($this->data[$offset]); }
-    public function current(): mixed { return $this->data[$this->pos] ?? NULL; }
-    public function key(): int { return $this->pos; }
-    public function next(): void { $this->pos++; }
-    public function rewind(): void { $this->pos = 0; }
-    public function valid(): bool { return isset($this->data[$this->pos]); }
-    public function count(): int { return count($this->data); }
+    public function offsetGet(mixed $offset): mixed {
+      return $this->data[$offset] ?? null;
+    }
+    public function offsetSet(mixed $offset, mixed $value): void {
+      if ($offset === null) {
+        $this->data[] = $value;
+      } else {
+        $this->data[$offset] = $value;
+      }
+    }
+    public function offsetUnset(mixed $offset): void {
+      unset($this->data[$offset]);
+    }
+    public function current(): mixed {
+      return $this->data[$this->pos] ?? null;
+    }
+    public function key(): int {
+      return $this->pos;
+    }
+    public function next(): void {
+      $this->pos++;
+    }
+    public function rewind(): void {
+      $this->pos = 0;
+    }
+    public function valid(): bool {
+      return isset($this->data[$this->pos]);
+    }
+    public function count(): int {
+      return count($this->data);
+    }
   }
 }
 
 namespace Civi\Payment\Exception {
-  class PaymentProcessorException extends \RuntimeException {}
+  class PaymentProcessorException extends \RuntimeException {
+  }
 }
 
 namespace Civi\Payment {
@@ -97,7 +123,7 @@ namespace Tests\Stubs {
      *
      * @var \Closure|null
      */
-    public static ?\Closure $executeInterceptor = NULL;
+    public static ?\Closure $executeInterceptor = null;
 
     public static function setResult(string $key, $data): void {
       self::$results[$key] = $data;
@@ -106,7 +132,7 @@ namespace Tests\Stubs {
     public static function reset(): void {
       self::$results = [];
       self::$calls = [];
-      self::$executeInterceptor = NULL;
+      self::$executeInterceptor = null;
     }
   }
 
@@ -124,9 +150,13 @@ namespace Tests\Stubs {
       $this->action = $action;
     }
 
-    public function addSelect(string ...$fields): static { return $this; }
-    public function selectRowCount(): static { return $this; }
-    public function addWhere(string $field, string $op, $value = NULL): static {
+    public function addSelect(string ...$fields): static {
+      return $this;
+    }
+    public function selectRowCount(): static {
+      return $this;
+    }
+    public function addWhere(string $field, string $op, $value = null): static {
       $this->wheres[] = [$field, $op, $value];
       return $this;
     }
@@ -134,8 +164,12 @@ namespace Tests\Stubs {
       $this->values[$field] = $value;
       return $this;
     }
-    public function addJoin(mixed ...$args): static { return $this; }
-    public function setLimit(int $limit): static { return $this; }
+    public function addJoin(mixed ...$args): static {
+      return $this;
+    }
+    public function setLimit(int $limit): static {
+      return $this;
+    }
 
     public function execute(): MockApi4Result {
       $key = "{$this->entity}.{$this->action}";
@@ -145,7 +179,7 @@ namespace Tests\Stubs {
         'values' => $this->values,
         'wheres' => $this->wheres,
       ];
-      if (Api4Mock::$executeInterceptor !== NULL) {
+      if (Api4Mock::$executeInterceptor !== null) {
         (Api4Mock::$executeInterceptor)($key, $this->values, $this->wheres);
       }
       $data = Api4Mock::$results[$key] ?? [];
@@ -155,7 +189,7 @@ namespace Tests\Stubs {
       // For get actions, filter results by WHERE clauses against row data.
       // Fields not present in a row (e.g., joined/chained fields) are ignored.
       if ($this->action === 'get' && !empty($this->wheres) && !empty($data)) {
-        $data = array_values(array_filter($data, fn($row) => $this->rowMatchesWheres($row)));
+        $data = array_values(array_filter($data, fn ($row) => $this->rowMatchesWheres($row)));
       }
       return new MockApi4Result($data);
     }
@@ -196,7 +230,7 @@ namespace Tests\Stubs {
       $regex = '/^' . str_replace(
         ['%', '_'],
         ['.*', '.'],
-        preg_quote($pattern, '/')
+        preg_quote($pattern, '/'),
       ) . '$/s';
       return (bool) preg_match($regex, (string) $value);
     }
@@ -214,19 +248,39 @@ namespace Tests\Stubs {
     }
 
     public function first(): ?array {
-      return $this->data[0] ?? NULL;
+      return $this->data[0] ?? null;
     }
 
-    public function offsetExists(mixed $offset): bool { return isset($this->data[$offset]); }
-    public function offsetGet(mixed $offset): mixed { return $this->data[$offset] ?? NULL; }
-    public function offsetSet(mixed $offset, mixed $value): void { $this->data[$offset] = $value; }
-    public function offsetUnset(mixed $offset): void { unset($this->data[$offset]); }
-    public function current(): mixed { return $this->data[$this->pos] ?? NULL; }
-    public function key(): int { return $this->pos; }
-    public function next(): void { $this->pos++; }
-    public function rewind(): void { $this->pos = 0; }
-    public function valid(): bool { return isset($this->data[$this->pos]); }
-    public function count(): int { return count($this->data); }
+    public function offsetExists(mixed $offset): bool {
+      return isset($this->data[$offset]);
+    }
+    public function offsetGet(mixed $offset): mixed {
+      return $this->data[$offset] ?? null;
+    }
+    public function offsetSet(mixed $offset, mixed $value): void {
+      $this->data[$offset] = $value;
+    }
+    public function offsetUnset(mixed $offset): void {
+      unset($this->data[$offset]);
+    }
+    public function current(): mixed {
+      return $this->data[$this->pos] ?? null;
+    }
+    public function key(): int {
+      return $this->pos;
+    }
+    public function next(): void {
+      $this->pos++;
+    }
+    public function rewind(): void {
+      $this->pos = 0;
+    }
+    public function valid(): bool {
+      return isset($this->data[$this->pos]);
+    }
+    public function count(): int {
+      return count($this->data);
+    }
   }
 }
 
@@ -236,64 +290,64 @@ namespace Tests\Stubs {
 
 namespace Civi\Api4 {
   class ContributionRecur {
-    public static function get($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function get($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('ContributionRecur', 'get');
     }
-    public static function update($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function update($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('ContributionRecur', 'update');
     }
   }
 
   class Contribution {
-    public static function get($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function get($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('Contribution', 'get');
     }
-    public static function update($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function update($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('Contribution', 'update');
     }
   }
 
   class Note {
-    public static function create($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function create($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('Note', 'create');
     }
   }
 
   class Contact {
-    public static function get($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function get($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('Contact', 'get');
     }
   }
 
   class MollieCustomer {
-    public static function get($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function get($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('MollieCustomer', 'get');
     }
-    public static function create($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function create($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('MollieCustomer', 'create');
     }
   }
 
   class PaymentToken {
-    public static function get($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function get($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('PaymentToken', 'get');
     }
-    public static function create($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function create($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('PaymentToken', 'create');
     }
   }
 
   class Activity {
-    public static function get($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function get($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('Activity', 'get');
     }
-    public static function create($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function create($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('Activity', 'create');
     }
   }
 
   class OptionValue {
-    public static function get($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+    public static function get($checkPermissions = true): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('OptionValue', 'get');
     }
   }
@@ -308,7 +362,7 @@ namespace {
     public static array $values = [];
 
     public function get(string $name): mixed {
-      return self::$values[$name] ?? NULL;
+      return self::$values[$name] ?? null;
     }
 
     public static function reset(): void {
@@ -318,11 +372,15 @@ namespace {
 
   class Civi {
     public static function log(string $channel = ''): object {
-      return new class {
-        public function warning(string $message, array $context = []): void {}
-        public function info(string $message, array $context = []): void {}
-        public function error(string $message, array $context = []): void {}
-        public function debug(string $message, array $context = []): void {}
+      return new class () {
+        public function warning(string $message, array $context = []): void {
+        }
+        public function info(string $message, array $context = []): void {
+        }
+        public function error(string $message, array $context = []): void {
+        }
+        public function debug(string $message, array $context = []): void {
+        }
       };
     }
 
@@ -337,18 +395,18 @@ namespace {
 
   class CiviLockManagerMock {
     /** @var bool Controls whether acquire() succeeds. */
-    public static bool $acquireSucceeds = TRUE;
+    public static bool $acquireSucceeds = true;
 
     /** @var array Captured lock names. */
     public static array $acquiredLocks = [];
 
-    public function acquire(string $name, ?int $timeout = NULL): CiviLockMock {
+    public function acquire(string $name, ?int $timeout = null): CiviLockMock {
       self::$acquiredLocks[] = $name;
       return new CiviLockMock(self::$acquireSucceeds);
     }
 
     public static function reset(): void {
-      self::$acquireSucceeds = TRUE;
+      self::$acquireSucceeds = true;
       self::$acquiredLocks = [];
     }
   }
@@ -364,7 +422,8 @@ namespace {
       return $this->acquired;
     }
 
-    public function release(): void {}
+    public function release(): void {
+    }
   }
 
   class CRM_Core_Payment {
@@ -372,7 +431,7 @@ namespace {
     protected $_paymentProcessor;
     protected $_component;
 
-    const BILLING_MODE_NOTIFY = 4;
+    public const BILLING_MODE_NOTIFY = 4;
 
     public function __construct($mode = '', &$paymentProcessor = []) {
       $this->_mode = $mode;
@@ -398,14 +457,14 @@ namespace {
 
   class CRM_Utils_System {
     /** @var string|null Captured redirect URL (test override instead of exit). */
-    public static ?string $redirectUrl = NULL;
+    public static ?string $redirectUrl = null;
 
     public static function redirect(string $url): void {
       self::$redirectUrl = $url;
     }
 
     public static function resetRedirect(): void {
-      self::$redirectUrl = NULL;
+      self::$redirectUrl = null;
     }
   }
 
@@ -432,14 +491,14 @@ namespace {
   }
 
   class CRM_Utils_Date {
-    public static function customFormat(string $date, ?string $format = NULL): string {
+    public static function customFormat(string $date, ?string $format = null): string {
       return $date;
     }
   }
 
   class CRM_Mollie_WorkflowMessage_RecurringReminder {
     /** @var bool Controls whether sendTemplate succeeds in tests. */
-    public static bool $sendResult = TRUE;
+    public static bool $sendResult = true;
 
     /** @var array Captured sendTemplate calls. */
     public static array $sendCalls = [];
@@ -452,11 +511,11 @@ namespace {
 
     public function sendTemplate(array $params): array {
       self::$sendCalls[] = $params;
-      return [self::$sendResult, NULL, NULL, NULL, self::$sendResult ? NULL : 'Send failed'];
+      return [self::$sendResult, null, null, null, self::$sendResult ? null : 'Send failed'];
     }
 
     public static function reset(): void {
-      self::$sendResult = TRUE;
+      self::$sendResult = true;
       self::$sendCalls = [];
     }
   }

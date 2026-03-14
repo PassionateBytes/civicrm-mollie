@@ -8,7 +8,6 @@ use CRM_Mollie_ExtensionUtil as E;
  * Accessible at Administer > CiviContribute > Mollie Payments > Settings.
  */
 class CRM_Mollie_Form_Settings extends CRM_Core_Form {
-
   private const BOOLEAN_SETTINGS = [
     'mollie_reminder_enabled',
     'mollie_debug_logging',
@@ -24,9 +23,9 @@ class CRM_Mollie_Form_Settings extends CRM_Core_Form {
   public function buildQuickForm(): void {
     CRM_Utils_System::setTitle(E::ts('Mollie Payment Processor Settings'));
 
-    $this->add('text', 'mollie_payment_description', E::ts('Payment Description'), ['class' => 'huge'], FALSE);
+    $this->add('text', 'mollie_payment_description', E::ts('Payment Description'), ['class' => 'huge'], false);
     $this->addElement('checkbox', 'mollie_reminder_enabled', E::ts('Enable Pre-Payment Reminders'));
-    $this->add('text', 'mollie_reminder_days_before', E::ts('Reminder Days Before Charge'), ['size' => 4], FALSE);
+    $this->add('text', 'mollie_reminder_days_before', E::ts('Reminder Days Before Charge'), ['size' => 4], false);
     $this->addElement('checkbox', 'mollie_debug_logging', E::ts('Enable Debug Logging'));
 
     $this->assign('reminderTemplateUrl', $this->getReminderTemplateUrl());
@@ -35,7 +34,7 @@ class CRM_Mollie_Form_Settings extends CRM_Core_Form {
       [
         'type' => 'submit',
         'name' => E::ts('Save'),
-        'isDefault' => TRUE,
+        'isDefault' => true,
       ],
       [
         'type' => 'cancel',
@@ -51,10 +50,10 @@ class CRM_Mollie_Form_Settings extends CRM_Core_Form {
    *   Edit URL, or null if the template doesn't exist yet.
    */
   private function getReminderTemplateUrl(): ?string {
-    $template = \Civi\Api4\MessageTemplate::get(FALSE)
+    $template = \Civi\Api4\MessageTemplate::get(false)
       ->addSelect('id')
       ->addWhere('workflow_name', '=', 'mollie_recurring_reminder')
-      ->addWhere('is_reserved', '=', FALSE)
+      ->addWhere('is_reserved', '=', false)
       ->setLimit(1)
       ->execute()
       ->first();
@@ -66,7 +65,7 @@ class CRM_Mollie_Form_Settings extends CRM_Core_Form {
       ]) . '#/edit?id=' . $template['id'];
     }
 
-    return NULL;
+    return null;
   }
 
   public function setDefaultValues(): array {
@@ -83,13 +82,11 @@ class CRM_Mollie_Form_Settings extends CRM_Core_Form {
     $settings = \Civi::settings();
 
     foreach (self::ALL_SETTINGS as $name) {
-      if (in_array($name, self::BOOLEAN_SETTINGS, TRUE)) {
+      if (in_array($name, self::BOOLEAN_SETTINGS, true)) {
         $settings->set($name, !empty($values[$name]));
-      }
-      elseif ($name === 'mollie_reminder_days_before') {
+      } elseif ($name === 'mollie_reminder_days_before') {
         $settings->set($name, (int) ($values[$name] ?? 7));
-      }
-      else {
+      } else {
         $settings->set($name, $values[$name] ?? '');
       }
     }

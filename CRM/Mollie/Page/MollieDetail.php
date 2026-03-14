@@ -10,20 +10,18 @@ use CRM_Mollie_ExtensionUtil as E;
  * the Mollie Payment Dashboard.
  */
 class CRM_Mollie_Page_MollieDetail extends CRM_Core_Page {
-
   /**
    * Render the Mollie resource detail page.
    */
   public function run(): void {
-    $apiPath = CRM_Utils_Request::retrieve('api_path', 'String', $this, TRUE);
+    $apiPath = CRM_Utils_Request::retrieve('api_path', 'String', $this, true);
 
     try {
-      $result = \Civi\Api4\MollieDetail::get(FALSE)
+      $result = \Civi\Api4\MollieDetail::get(false)
         ->setApiPath($apiPath)
         ->execute()
         ->first();
-    }
-    catch (\CRM_Core_Exception $e) {
+    } catch (\CRM_Core_Exception $e) {
       $this->assign('error', $e->getMessage());
       parent::run();
       return;
@@ -50,8 +48,7 @@ class CRM_Mollie_Page_MollieDetail extends CRM_Core_Page {
       $this->assign('items', $result['items']);
       $this->assign('pagination', $result['pagination']);
       CRM_Utils_System::setTitle(E::ts('Mollie %1', [1 => $typeLabel]));
-    }
-    else {
+    } else {
       CRM_Utils_System::setTitle(E::ts('Mollie %1: %2', [
         1 => $typeLabel,
         2 => $result['mollie_id'],

@@ -2,7 +2,6 @@
 
 require_once 'mollie.civix.php';
 
-use CRM_Mollie_ExtensionUtil as E;
 
 /**
  * Implements hook_civicrm_config().
@@ -10,9 +9,9 @@ use CRM_Mollie_ExtensionUtil as E;
 function mollie_civicrm_config(&$config): void {
   _mollie_civix_civicrm_config($config);
 
-  static $autoloaded = FALSE;
+  static $autoloaded = false;
   if (!$autoloaded) {
-    $autoloaded = TRUE;
+    $autoloaded = true;
     $autoloadFile = __DIR__ . '/vendor/autoload.php';
     if (file_exists($autoloadFile)) {
       require_once $autoloadFile;

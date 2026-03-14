@@ -7,5 +7,4 @@
  * CRM_Core_DAO_Base handles all runtime initialization.
  */
 class CRM_Mollie_DAO_MollieCustomer extends CRM_Core_DAO_Base {
-
 }

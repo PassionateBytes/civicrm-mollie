@@ -16,7 +16,6 @@ use CRM_Mollie_ExtensionUtil as E;
  * Only runs if reminders are enabled in extension settings.
  */
 class Run extends AbstractAction {
-
   /**
    * @param Result $result
    */
@@ -33,16 +32,18 @@ class Run extends AbstractAction {
     $windowStart = new \DateTime('now');
     $windowEnd = (new \DateTime('now'))->modify("+{$daysBefore} days");
 
-    $activeRecurs = ContributionRecur::get(FALSE)
+    $activeRecurs = ContributionRecur::get(false)
       ->addSelect('id', 'contact_id', 'amount', 'currency', 'frequency_interval', 'frequency_unit', 'next_sched_contribution_date')
       ->addWhere('processor_id', 'LIKE', 'sub_%')
       ->addWhere('contribution_status_id:name', 'IN', ['In Progress', 'Pending'])
       ->addWhere('is_test', 'IN', [0, 1])
       ->addWhere('next_sched_contribution_date', '>=', $windowStart->format('Y-m-d'))
       ->addWhere('next_sched_contribution_date', '<=', $windowEnd->format('Y-m-d 23:59:59'))
-      ->addJoin('PaymentProcessorType AS ppt', 'INNER',
+      ->addJoin(
+        'PaymentProcessorType AS ppt',
+        'INNER',
         ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
-        ['ppt.name', '=', '"mollie"']
+        ['ppt.name', '=', '"mollie"'],
       )
       ->execute();
 
@@ -57,7 +58,7 @@ class Run extends AbstractAction {
           continue;
         }
 
-        $contact = Contact::get(FALSE)
+        $contact = Contact::get(false)
           ->addSelect('display_name', 'first_name', 'email_primary.email')
           ->addWhere('id', '=', $recur['contact_id'])
           ->setLimit(1)
@@ -77,8 +78,7 @@ class Run extends AbstractAction {
         self::recordReminderActivity($recur, $activityTypeId);
 
         $stats['sent']++;
-      }
-      catch (\Exception $e) {
+      } catch (\Exception $e) {
         $stats['errors']++;
         \CRM_Mollie_Log::error("Reminder: failed to send for ContributionRecur #{$recur['id']}: {$e->getMessage()}", [
           'contribution_recur_id' => $recur['id'],
@@ -112,8 +112,8 @@ class Run extends AbstractAction {
       'toName' => $contact['display_name'] ?? '',
     ]);
 
-    $sent = $result[0] ?? FALSE;
-    $errorMsg = $result[4] ?? NULL;
+    $sent = $result[0] ?? false;
+    $errorMsg = $result[4] ?? null;
 
     if (!$sent) {
       throw new \RuntimeException('Failed to send reminder email: ' . ($errorMsg ?? 'unknown error'));
@@ -138,7 +138,7 @@ class Run extends AbstractAction {
   protected static function reminderAlreadySent(int $recurId, string $nextDate, int $activityTypeId): bool {
     $chargeDate = (new \DateTime($nextDate))->format('Y-m-d');
 
-    $count = Activity::get(FALSE)
+    $count = Activity::get(false)
       ->selectRowCount()
       ->addWhere('activity_type_id', '=', $activityTypeId)
       ->addWhere('source_record_id', '=', $recurId)
@@ -159,7 +159,7 @@ class Run extends AbstractAction {
   protected static function recordReminderActivity(array $recur, int $activityTypeId): void {
     $chargeDate = (new \DateTime($recur['next_sched_contribution_date']))->format('Y-m-d');
 
-    Activity::create(FALSE)
+    Activity::create(false)
       ->addValue('activity_type_id', $activityTypeId)
       ->addValue('source_record_id', $recur['id'])
       ->addValue('source_contact_id', $recur['contact_id'])
@@ -180,7 +180,7 @@ class Run extends AbstractAction {
    * @throws \RuntimeException
    */
   protected static function getReminderActivityTypeId(): int {
-    $result = \Civi\Api4\OptionValue::get(FALSE)
+    $result = \Civi\Api4\OptionValue::get(false)
       ->addSelect('value')
       ->addWhere('option_group_id.name', '=', 'activity_type')
       ->addWhere('name', '=', 'mollie_reminder_sent')

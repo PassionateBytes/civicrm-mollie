@@ -17,7 +17,6 @@ use CRM_Mollie_ExtensionUtil as E;
  * @internal
  */
 class ContributionRecurTokens extends AutoService implements \Symfony\Component\EventDispatcher\EventSubscriberInterface {
-
   /**
    * Per-request cache for loaded ContributionRecur records.
    *
@@ -75,7 +74,7 @@ class ContributionRecurTokens extends AutoService implements \Symfony\Component\
     }
 
     foreach ($e->getRows() as $row) {
-      $recurId = $row->context['contributionRecurId'] ?? NULL;
+      $recurId = $row->context['contributionRecurId'] ?? null;
       if (!$recurId) {
         continue;
       }
@@ -88,30 +87,47 @@ class ContributionRecurTokens extends AutoService implements \Symfony\Component\
       $currency = $recur['currency'] ?? 'EUR';
       $amount = $recur['amount'] ?? 0;
 
-      $row->format('text/html')->tokens('contribution_recur', 'amount',
-        \CRM_Utils_Money::format($amount, $currency));
-      $row->format('text/plain')->tokens('contribution_recur', 'amount',
-        \CRM_Utils_Money::format($amount, $currency));
+      $row->format('text/html')->tokens(
+        'contribution_recur',
+        'amount',
+        \CRM_Utils_Money::format($amount, $currency),
+      );
+      $row->format('text/plain')->tokens(
+        'contribution_recur',
+        'amount',
+        \CRM_Utils_Money::format($amount, $currency),
+      );
 
       $row->format('text/html')->tokens('contribution_recur', 'currency', $currency);
       $row->format('text/plain')->tokens('contribution_recur', 'currency', $currency);
 
-      $row->format('text/html')->tokens('contribution_recur', 'frequency_interval',
-        (string) ($recur['frequency_interval'] ?? ''));
-      $row->format('text/plain')->tokens('contribution_recur', 'frequency_interval',
-        (string) ($recur['frequency_interval'] ?? ''));
+      $row->format('text/html')->tokens(
+        'contribution_recur',
+        'frequency_interval',
+        (string) ($recur['frequency_interval'] ?? ''),
+      );
+      $row->format('text/plain')->tokens(
+        'contribution_recur',
+        'frequency_interval',
+        (string) ($recur['frequency_interval'] ?? ''),
+      );
 
-      $row->format('text/html')->tokens('contribution_recur', 'frequency_unit',
-        $recur['frequency_unit'] ?? '');
-      $row->format('text/plain')->tokens('contribution_recur', 'frequency_unit',
-        $recur['frequency_unit'] ?? '');
+      $row->format('text/html')->tokens(
+        'contribution_recur',
+        'frequency_unit',
+        $recur['frequency_unit'] ?? '',
+      );
+      $row->format('text/plain')->tokens(
+        'contribution_recur',
+        'frequency_unit',
+        $recur['frequency_unit'] ?? '',
+      );
 
       if (!empty($recur['next_sched_contribution_date'])) {
         $formatted = \CRM_Utils_Date::customFormat($recur['next_sched_contribution_date'], '%B %E%f, %Y');
         $row->format('text/html')->tokens('contribution_recur', 'next_sched_contribution_date', $formatted);
         $row->format('text/plain')->tokens('contribution_recur', 'next_sched_contribution_date', $formatted);
-      }
-      else {
+      } else {
         $row->format('text/html')->tokens('contribution_recur', 'next_sched_contribution_date', '');
         $row->format('text/plain')->tokens('contribution_recur', 'next_sched_contribution_date', '');
       }
@@ -129,7 +145,7 @@ class ContributionRecurTokens extends AutoService implements \Symfony\Component\
    */
   private function loadRecur(int $recurId): ?array {
     if (!array_key_exists($recurId, $this->cache)) {
-      $this->cache[$recurId] = \Civi\Api4\ContributionRecur::get(FALSE)
+      $this->cache[$recurId] = \Civi\Api4\ContributionRecur::get(false)
         ->addSelect('amount', 'currency', 'frequency_interval', 'frequency_unit', 'next_sched_contribution_date')
         ->addWhere('id', '=', $recurId)
         ->execute()
@@ -148,7 +164,7 @@ class ContributionRecurTokens extends AutoService implements \Symfony\Component\
    *   TRUE if 'contributionRecurId' is in the processor's schema.
    */
   private function isActive(\Civi\Token\TokenProcessor $processor): bool {
-    return in_array('contributionRecurId', $processor->context['schema'] ?? [], TRUE);
+    return in_array('contributionRecurId', $processor->context['schema'] ?? [], true);
   }
 
 }

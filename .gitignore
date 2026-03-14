@@ -1,6 +1,7 @@
 composer.lock
 .idea/
 .phpunit.cache/
+.php-cs-fixer.cache
 *.swp
 *.swo
 *~

@@ -11,7 +11,6 @@ namespace Civi\Api4;
  * @package Civi\Api4
  */
 class MollieCustomer extends Generic\DAOEntity {
-
   /**
    * @return array
    */

@@ -7,7 +7,6 @@
  * CiviCRM log file, and routes to the 'mollie' log channel.
  */
 class CRM_Mollie_Log {
-
   private const PREFIX = '[Mollie] ';
 
   /**

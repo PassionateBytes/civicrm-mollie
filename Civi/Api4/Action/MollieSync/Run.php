@@ -22,7 +22,6 @@ use Mollie\Api\Resources\Subscription;
  * - CiviCRM -> Mollie: retries cancellations that failed to reach Mollie
  */
 class Run extends AbstractAction {
-
   /**
    * @param Result $result
    */
@@ -57,16 +56,27 @@ class Run extends AbstractAction {
    * @param array $stats
    */
   protected function syncFromMollie(array &$stats): void {
-    $activeRecurs = ContributionRecur::get(FALSE)
-      ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id',
-        'contribution_status_id:name', 'next_sched_contribution_date', 'amount',
-        'currency', 'end_date', 'cancel_date')
+    $activeRecurs = ContributionRecur::get(false)
+      ->addSelect(
+        'id',
+        'processor_id',
+        'contact_id',
+        'payment_processor_id',
+        'contribution_status_id:name',
+        'next_sched_contribution_date',
+        'amount',
+        'currency',
+        'end_date',
+        'cancel_date',
+      )
       ->addWhere('processor_id', 'LIKE', 'sub_%')
       ->addWhere('contribution_status_id:name', 'IN', ['In Progress', 'Pending'])
       ->addWhere('is_test', 'IN', [0, 1])
-      ->addJoin('PaymentProcessorType AS ppt', 'INNER',
+      ->addJoin(
+        'PaymentProcessorType AS ppt',
+        'INNER',
         ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
-        ['ppt.name', '=', '"mollie"']
+        ['ppt.name', '=', '"mollie"'],
       )
       ->execute();
 
@@ -75,7 +85,7 @@ class Run extends AbstractAction {
 
       try {
         $mollieCustomerId = static::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
-        if ($mollieCustomerId === NULL) {
+        if ($mollieCustomerId === null) {
           \CRM_Mollie_Log::warning("Sync: no Mollie customer for ContributionRecur #{$recur['id']}", [
             'contribution_recur_id' => $recur['id'],
           ]);
@@ -84,7 +94,7 @@ class Run extends AbstractAction {
 
         $client = static::getClientForProcessor($recur['payment_processor_id']);
         $subscription = static::throttledApiCall(
-          fn() => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id'])
+          fn () => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']),
         );
 
         $updates = $this->buildUpdatesFromSubscription($subscription, $recur);
@@ -92,7 +102,7 @@ class Run extends AbstractAction {
           continue;
         }
 
-        $update = ContributionRecur::update(FALSE)
+        $update = ContributionRecur::update(false)
           ->addWhere('id', '=', $recur['id']);
         foreach ($updates as $field => $value) {
           $update->addValue($field, $value);
@@ -106,7 +116,7 @@ class Run extends AbstractAction {
             'Completed' => $stats['completed']++,
             'Cancelled' => $stats['cancelled']++,
             'Failed' => $stats['failed']++,
-            default => NULL,
+            default => null,
           };
         }
 
@@ -115,8 +125,7 @@ class Run extends AbstractAction {
           'subscription_id' => $recur['processor_id'],
           'updates' => $updates,
         ]);
-      }
-      catch (\Exception $e) {
+      } catch (\Exception $e) {
         $stats['errors']++;
         \CRM_Mollie_Log::error("Sync: failed to check subscription for ContributionRecur #{$recur['id']}: {$e->getMessage()}", [
           'contribution_recur_id' => $recur['id'],
@@ -147,22 +156,22 @@ class Run extends AbstractAction {
 
     // Status.
     $newStatus = self::mapMollieStatusToCiviCrm($subscription->status);
-    if ($newStatus !== NULL && $newStatus !== $recur['contribution_status_id:name']) {
+    if ($newStatus !== null && $newStatus !== $recur['contribution_status_id:name']) {
       $updates['contribution_status_id:name'] = $newStatus;
 
       if ($newStatus === 'Completed') {
         $updates['end_date'] = date('Y-m-d H:i:s');
-        $updates['next_sched_contribution_date'] = NULL;
+        $updates['next_sched_contribution_date'] = null;
       }
       if ($newStatus === 'Cancelled') {
-        $updates['cancel_date'] = $subscription->canceledAt !== NULL
+        $updates['cancel_date'] = $subscription->canceledAt !== null
           ? date('Y-m-d H:i:s', strtotime($subscription->canceledAt))
           : date('Y-m-d H:i:s');
         $updates['end_date'] = $updates['cancel_date'];
-        $updates['next_sched_contribution_date'] = NULL;
+        $updates['next_sched_contribution_date'] = null;
       }
       if ($newStatus === 'Failed') {
-        $updates['next_sched_contribution_date'] = NULL;
+        $updates['next_sched_contribution_date'] = null;
       }
       // Clear stale failure/cancellation fields when recovering to an active
       // state. These may have been set by a prior Cancelled or Failed
@@ -170,18 +179,18 @@ class Run extends AbstractAction {
       // failContributionRecur). Leaving them would create an inconsistency
       // where the record is In Progress but still shows a cancel/end date.
       if ($newStatus === 'In Progress') {
-        $updates['cancel_date'] = NULL;
-        $updates['cancel_reason'] = NULL;
-        $updates['end_date'] = NULL;
+        $updates['cancel_date'] = null;
+        $updates['cancel_reason'] = null;
+        $updates['end_date'] = null;
       }
     }
 
     // Next payment date — only for active subscriptions.
-    if ($subscription->nextPaymentDate !== NULL && in_array($subscription->status, ['active', 'pending'], TRUE)) {
+    if ($subscription->nextPaymentDate !== null && in_array($subscription->status, ['active', 'pending'], true)) {
       $mollieNextDate = $subscription->nextPaymentDate . ' 00:00:00';
-      $civiNextDate = $recur['next_sched_contribution_date'] !== NULL
+      $civiNextDate = $recur['next_sched_contribution_date'] !== null
         ? date('Y-m-d', strtotime($recur['next_sched_contribution_date'])) . ' 00:00:00'
-        : NULL;
+        : null;
 
       if ($civiNextDate !== $mollieNextDate) {
         $updates['next_sched_contribution_date'] = $mollieNextDate;
@@ -189,7 +198,7 @@ class Run extends AbstractAction {
     }
 
     // Amount — Mollie is authoritative if it was changed on their side.
-    if ($subscription->amount !== NULL && isset($subscription->amount->value)) {
+    if ($subscription->amount !== null && isset($subscription->amount->value)) {
       $mollieAmount = number_format((float) $subscription->amount->value, 2, '.', '');
       $civiAmount = number_format((float) $recur['amount'], 2, '.', '');
 
@@ -212,30 +221,41 @@ class Run extends AbstractAction {
    * @param array $stats
    */
   protected function recoverSuspended(array &$stats): void {
-    $failedRecurs = ContributionRecur::get(FALSE)
-      ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id',
-        'contribution_status_id:name', 'next_sched_contribution_date', 'amount',
-        'currency', 'end_date', 'cancel_date')
+    $failedRecurs = ContributionRecur::get(false)
+      ->addSelect(
+        'id',
+        'processor_id',
+        'contact_id',
+        'payment_processor_id',
+        'contribution_status_id:name',
+        'next_sched_contribution_date',
+        'amount',
+        'currency',
+        'end_date',
+        'cancel_date',
+      )
       ->addWhere('processor_id', 'LIKE', 'sub_%')
       ->addWhere('contribution_status_id:name', '=', 'Failed')
       ->addWhere('modified_date', '>=', date('Y-m-d', strtotime('-30 days')))
       ->addWhere('is_test', 'IN', [0, 1])
-      ->addJoin('PaymentProcessorType AS ppt', 'INNER',
+      ->addJoin(
+        'PaymentProcessorType AS ppt',
+        'INNER',
         ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
-        ['ppt.name', '=', '"mollie"']
+        ['ppt.name', '=', '"mollie"'],
       )
       ->execute();
 
     foreach ($failedRecurs as $recur) {
       try {
         $mollieCustomerId = static::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
-        if ($mollieCustomerId === NULL) {
+        if ($mollieCustomerId === null) {
           continue;
         }
 
         $client = static::getClientForProcessor($recur['payment_processor_id']);
         $subscription = static::throttledApiCall(
-          fn() => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id'])
+          fn () => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']),
         );
 
         if ($subscription->status !== 'active') {
@@ -247,7 +267,7 @@ class Run extends AbstractAction {
           continue;
         }
 
-        $update = ContributionRecur::update(FALSE)
+        $update = ContributionRecur::update(false)
           ->addWhere('id', '=', $recur['id']);
         foreach ($updates as $field => $value) {
           $update->addValue($field, $value);
@@ -260,8 +280,7 @@ class Run extends AbstractAction {
           'contribution_recur_id' => $recur['id'],
           'subscription_id' => $recur['processor_id'],
         ]);
-      }
-      catch (\Exception $e) {
+      } catch (\Exception $e) {
         $stats['errors']++;
         \CRM_Mollie_Log::error("Sync: failed to check suspended subscription for ContributionRecur #{$recur['id']}: {$e->getMessage()}", [
           'contribution_recur_id' => $recur['id'],
@@ -280,36 +299,38 @@ class Run extends AbstractAction {
     // Only check recently cancelled subscriptions to avoid scanning the full
     // history on every run. 7 days is generous enough to survive a few days of
     // cron downtime while keeping the query bounded as cancellations accumulate.
-    $cancelledRecurs = ContributionRecur::get(FALSE)
+    $cancelledRecurs = ContributionRecur::get(false)
       ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id')
       ->addWhere('processor_id', 'LIKE', 'sub_%')
       ->addWhere('contribution_status_id:name', '=', 'Cancelled')
       ->addWhere('cancel_date', '>=', date('Y-m-d', strtotime('-7 days')))
       ->addWhere('is_test', 'IN', [0, 1])
-      ->addJoin('PaymentProcessorType AS ppt', 'INNER',
+      ->addJoin(
+        'PaymentProcessorType AS ppt',
+        'INNER',
         ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
-        ['ppt.name', '=', '"mollie"']
+        ['ppt.name', '=', '"mollie"'],
       )
       ->execute();
 
     foreach ($cancelledRecurs as $recur) {
       try {
         $mollieCustomerId = static::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
-        if ($mollieCustomerId === NULL) {
+        if ($mollieCustomerId === null) {
           continue;
         }
 
         $client = static::getClientForProcessor($recur['payment_processor_id']);
         $subscription = static::throttledApiCall(
-          fn() => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id'])
+          fn () => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']),
         );
 
-        if (!in_array($subscription->status, ['active', 'pending', 'suspended'], TRUE)) {
+        if (!in_array($subscription->status, ['active', 'pending', 'suspended'], true)) {
           continue;
         }
 
         static::throttledApiCall(
-          fn() => $client->subscriptions->cancelForId($mollieCustomerId, $recur['processor_id'])
+          fn () => $client->subscriptions->cancelForId($mollieCustomerId, $recur['processor_id']),
         );
         $stats['cancellations_retried']++;
 
@@ -317,8 +338,7 @@ class Run extends AbstractAction {
           'contribution_recur_id' => $recur['id'],
           'subscription_id' => $recur['processor_id'],
         ]);
-      }
-      catch (\Exception $e) {
+      } catch (\Exception $e) {
         $stats['cancellations_failed']++;
         \CRM_Mollie_Log::error("Sync: failed to retry cancellation for ContributionRecur #{$recur['id']}: {$e->getMessage()}", [
           'contribution_recur_id' => $recur['id'],
@@ -344,8 +364,8 @@ class Run extends AbstractAction {
       // 'pending' means Mollie hasn't attempted the first subscription charge yet.
       // By the time we create the subscription, the initial payment already succeeded
       // and CiviCRM recur is already 'In Progress' — no status change needed.
-      'pending' => NULL,
-      default => NULL,
+      'pending' => null,
+      default => null,
     };
   }
 
@@ -358,14 +378,14 @@ class Run extends AbstractAction {
    * @return string|null
    */
   protected static function getMollieCustomerId(int $contactId, int $processorId): ?string {
-    $result = MollieCustomer::get(FALSE)
+    $result = MollieCustomer::get(false)
       ->addSelect('mollie_customer_id')
       ->addWhere('contact_id', '=', $contactId)
       ->addWhere('payment_processor_id', '=', $processorId)
       ->setLimit(1)
       ->execute();
 
-    return $result->count() > 0 ? $result->first()['mollie_customer_id'] : NULL;
+    return $result->count() > 0 ? $result->first()['mollie_customer_id'] : null;
   }
 
   /**
@@ -419,8 +439,7 @@ class Run extends AbstractAction {
     for ($attempt = 0; $attempt <= $maxRetries; $attempt++) {
       try {
         return $apiCall();
-      }
-      catch (ApiException $e) {
+      } catch (ApiException $e) {
         if ($e->getCode() !== 429 || $attempt >= $maxRetries) {
           throw $e;
         }
@@ -447,7 +466,7 @@ class Run extends AbstractAction {
    */
   protected static function getRetryAfterSeconds(ApiException $e): int {
     $response = $e->getResponse();
-    if ($response !== NULL && $response->hasHeader('Retry-After')) {
+    if ($response !== null && $response->hasHeader('Retry-After')) {
       $value = (int) $response->getHeader('Retry-After')[0];
       if ($value > 0 && $value <= 60) {
         return $value;

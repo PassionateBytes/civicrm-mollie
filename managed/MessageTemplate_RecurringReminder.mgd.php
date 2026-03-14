@@ -119,7 +119,7 @@ return [
     'update' => 'always',
     'params' => [
       'version' => 4,
-      'checkPermissions' => FALSE,
+      'checkPermissions' => false,
       'match' => ['workflow_name', 'is_reserved'],
       'values' => [
         'workflow_name' => 'mollie_recurring_reminder',
@@ -127,9 +127,9 @@ return [
         'msg_subject' => $subject,
         'msg_text' => $text,
         'msg_html' => $html,
-        'is_default' => FALSE,
-        'is_active' => TRUE,
-        'is_reserved' => TRUE,
+        'is_default' => false,
+        'is_active' => true,
+        'is_reserved' => true,
       ],
     ],
   ],
@@ -140,7 +140,7 @@ return [
     'update' => 'never',
     'params' => [
       'version' => 4,
-      'checkPermissions' => FALSE,
+      'checkPermissions' => false,
       'match' => ['workflow_name', 'is_reserved'],
       'values' => [
         'workflow_name' => 'mollie_recurring_reminder',
@@ -148,9 +148,9 @@ return [
         'msg_subject' => $subject,
         'msg_text' => $text,
         'msg_html' => $html,
-        'is_default' => TRUE,
-        'is_active' => TRUE,
-        'is_reserved' => FALSE,
+        'is_default' => true,
+        'is_active' => true,
+        'is_reserved' => false,
       ],
     ],
   ],

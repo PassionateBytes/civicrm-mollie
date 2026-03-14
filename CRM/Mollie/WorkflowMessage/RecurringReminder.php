@@ -1,7 +1,6 @@
 <?php
 
 use Civi\WorkflowMessage\GenericWorkflowMessage;
-use CRM_Mollie_ExtensionUtil as E;
 
 /**
  * Workflow message for pre-payment recurring donation reminders.
@@ -11,7 +10,6 @@ use CRM_Mollie_ExtensionUtil as E;
  * @support full
  */
 class CRM_Mollie_WorkflowMessage_RecurringReminder extends GenericWorkflowMessage {
-
   public const WORKFLOW = 'mollie_recurring_reminder';
 
   /**

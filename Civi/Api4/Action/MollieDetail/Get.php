@@ -11,7 +11,6 @@ use Mollie\Api\Exceptions\ApiException;
  * Fetch a Mollie resource by API URL and return a structured representation.
  */
 class Get extends AbstractAction {
-
   /**
    * Mollie API path to fetch (e.g. v2/payments/tr_xxx).
    *
@@ -28,8 +27,7 @@ class Get extends AbstractAction {
 
     if (self::isListResponse($resource)) {
       $this->buildListResult($resource, $result);
-    }
-    else {
+    } else {
       $this->buildSingleResult($resource, $result);
     }
   }
@@ -61,7 +59,7 @@ class Get extends AbstractAction {
     $links = self::extractLinks($resource);
 
     $result[] = [
-      'is_list' => FALSE,
+      'is_list' => false,
       'type' => $type,
       'mollie_id' => $mollieId,
       'dashboard_url' => $dashboardUrl,
@@ -103,7 +101,7 @@ class Get extends AbstractAction {
     }
 
     $result[] = [
-      'is_list' => TRUE,
+      'is_list' => true,
       'type' => self::humanizeKey($collectionKey),
       'mollie_id' => '',
       'dashboard_url' => '',
@@ -128,7 +126,7 @@ class Get extends AbstractAction {
     $pagination = ['previous' => '', 'next' => ''];
 
     foreach (['previous', 'next'] as $dir) {
-      $link = $resource->_links->$dir ?? NULL;
+      $link = $resource->_links->$dir ?? null;
       if ($link && !empty($link->href)) {
         $pagination[$dir] = self::stripBaseUrl($link->href);
       }
@@ -151,9 +149,9 @@ class Get extends AbstractAction {
    * @return \stdClass
    */
   protected function fetchResource(string $apiPath): \stdClass {
-    $resource = NULL;
+    $resource = null;
     $errors = [];
-    foreach ([FALSE, TRUE] as $testMode) {
+    foreach ([false, true] as $testMode) {
       try {
         $client = self::getClientForMode($testMode);
         // performHttpCall() is public but not part of the SDK's documented
@@ -164,13 +162,12 @@ class Get extends AbstractAction {
         // removes this method, this admin-only feature will need updating.
         $resource = $client->performHttpCall('GET', $apiPath);
         break;
-      }
-      catch (ApiException|\CRM_Core_Exception $e) {
+      } catch (ApiException|\CRM_Core_Exception $e) {
         $errors[] = ($testMode ? 'test' : 'live') . ': ' . $e->getMessage();
       }
     }
 
-    if ($resource === NULL) {
+    if ($resource === null) {
       throw new \CRM_Core_Exception(E::ts('Mollie API error: %1', [1 => implode('; ', $errors)]));
     }
 
@@ -185,7 +182,7 @@ class Get extends AbstractAction {
    * @return string
    */
   protected static function detectType(string $mollieId): string {
-    return match (TRUE) {
+    return match (true) {
       str_starts_with($mollieId, 'tr_') => 'payment',
       str_starts_with($mollieId, 'sub_') => 'subscription',
       str_starts_with($mollieId, 'cst_') => 'customer',
@@ -211,7 +208,7 @@ class Get extends AbstractAction {
     $skip = ['self', 'dashboard', 'previous', 'next', 'profile', 'settlement', 'settlements', 'balance', 'balances', 'invoice', 'invoices'];
 
     foreach ($rawLinks as $key => $link) {
-      if (in_array($key, $skip, TRUE)) {
+      if (in_array($key, $skip, true)) {
         continue;
       }
 
@@ -249,16 +246,16 @@ class Get extends AbstractAction {
     $fields = [];
 
     foreach (get_object_vars($resource) as $key => $value) {
-      if (in_array($key, $skip, TRUE)) {
+      if (in_array($key, $skip, true)) {
         continue;
       }
-      if ($value === NULL) {
+      if ($value === null) {
         continue;
       }
 
       $label = self::humanizeKey($key);
 
-      if (in_array($key, $json, TRUE) && (is_object($value) || is_array($value))) {
+      if (in_array($key, $json, true) && (is_object($value) || is_array($value))) {
         $fields[$label] = ['_json' => json_encode($value, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)];
         continue;
       }
@@ -306,7 +303,7 @@ class Get extends AbstractAction {
 
     $fields = [];
     foreach ($vars as $key => $val) {
-      if ($val === NULL || $key === '_links') {
+      if ($val === null || $key === '_links') {
         continue;
       }
       $fields[self::humanizeKey($key)] = self::convertValue($val);
@@ -374,25 +371,25 @@ class Get extends AbstractAction {
    * @return \Mollie\Api\MollieApiClient
    */
   protected static function getClientForMode(bool $testMode): \Mollie\Api\MollieApiClient {
-    $typeId = \Civi\Api4\PaymentProcessorType::get(FALSE)
+    $typeId = \Civi\Api4\PaymentProcessorType::get(false)
       ->addSelect('id')
       ->addWhere('name', '=', 'mollie')
       ->execute()
-      ->first()['id'] ?? NULL;
+      ->first()['id'] ?? null;
 
-    if ($typeId === NULL) {
+    if ($typeId === null) {
       throw new \CRM_Core_Exception(E::ts('Mollie payment processor type not found.'));
     }
 
-    $processor = \Civi\Api4\PaymentProcessor::get(FALSE)
+    $processor = \Civi\Api4\PaymentProcessor::get(false)
       ->addSelect('user_name')
       ->addWhere('payment_processor_type_id', '=', $typeId)
       ->addWhere('is_test', '=', $testMode)
-      ->addWhere('is_active', '=', TRUE)
+      ->addWhere('is_active', '=', true)
       ->execute()
       ->first();
 
-    if ($processor === NULL || empty($processor['user_name'])) {
+    if ($processor === null || empty($processor['user_name'])) {
       throw new \CRM_Core_Exception(E::ts('No active Mollie payment processor found.'));
     }
 

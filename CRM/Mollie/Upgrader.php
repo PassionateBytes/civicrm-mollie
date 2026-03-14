@@ -1,6 +1,5 @@
 <?php
 
-use CRM_Mollie_ExtensionUtil as E;
 
 /**
  * Collection of upgrade steps for the Mollie extension.
@@ -11,5 +10,4 @@ use CRM_Mollie_ExtensionUtil as E;
  * methods for schema migrations between versions.
  */
 class CRM_Mollie_Upgrader extends CRM_Extension_Upgrader_Base {
-
 }

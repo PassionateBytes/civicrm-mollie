@@ -2,6 +2,7 @@
 
 namespace Tests\Unit;
 
+use Civi\Payment\Exception\PaymentProcessorException;
 use Mollie\Api\Endpoints\SubscriptionEndpoint;
 use Mollie\Api\Exceptions\ApiException;
 use Mollie\Api\MollieApiClient;
@@ -9,7 +10,6 @@ use Mollie\Api\Resources\Chargeback;
 use Mollie\Api\Resources\Payment;
 use Mollie\Api\Resources\Refund;
 use Mollie\Api\Resources\Subscription;
-use Civi\Payment\Exception\PaymentProcessorException;
 use PHPUnit\Framework\TestCase;
 use Tests\Stubs\Api4Mock;
 
@@ -18,11 +18,10 @@ use Tests\Stubs\Api4Mock;
  * external dependencies (CiviCRM APIs, Mollie API client).
  */
 class ProcessingTestableMollie extends \CRM_Core_Payment_Mollie {
-
-  public bool $stubbedFinancialTrxnExists = FALSE;
+  public bool $stubbedFinancialTrxnExists = false;
   public int $stubbedPaymentTokenId = 99;
   public ?string $stubbedMollieCustomerId = 'cst_test123';
-  public ?MollieApiClient $stubbedMollieClient = NULL;
+  public ?MollieApiClient $stubbedMollieClient = null;
 
   /** @var array Params passed to completeContribution (captured for assertions). */
   public array $completedContributionParams = [];
@@ -113,7 +112,6 @@ class ProcessingTestableMollie extends \CRM_Core_Payment_Mollie {
  * Payment subclass that stubs chargebacks() and refunds() to avoid API calls.
  */
 class TestablePayment extends Payment {
-
   private array $stubbedChargebacks = [];
   private array $stubbedRefunds = [];
 
@@ -150,7 +148,6 @@ class TestablePayment extends Payment {
 // ===========================================================================
 
 class MollieProcessingTest extends TestCase {
-
   protected function setUp(): void {
     Api4Mock::reset();
     \Api3Mock::reset();
@@ -165,16 +162,16 @@ class MollieProcessingTest extends TestCase {
     $p = new TestablePayment($client);
     $p->id = $props['id'] ?? 'tr_test123';
     $p->status = $props['status'] ?? 'paid';
-    $p->paidAt = ($props['status'] ?? 'paid') === 'paid' ? '2026-03-06T12:00:00+00:00' : NULL;
+    $p->paidAt = ($props['status'] ?? 'paid') === 'paid' ? '2026-03-06T12:00:00+00:00' : null;
     $p->method = $props['method'] ?? 'ideal';
-    $p->mandateId = $props['mandateId'] ?? NULL;
+    $p->mandateId = $props['mandateId'] ?? null;
     $p->customerId = $props['customerId'] ?? 'cst_test123';
-    $p->subscriptionId = $props['subscriptionId'] ?? NULL;
+    $p->subscriptionId = $props['subscriptionId'] ?? null;
 
     $p->amount = $this->makeAmount($props['amountValue'] ?? '25.00');
     $p->settlementAmount = isset($props['settlementValue'])
       ? $this->makeAmount($props['settlementValue'], $props['settlementCurrency'] ?? 'EUR')
-      : NULL;
+      : null;
 
     return $p;
   }
@@ -186,7 +183,7 @@ class MollieProcessingTest extends TestCase {
     return $obj;
   }
 
-  private function makeContribution(int $id = 1, ?int $recurId = NULL): array {
+  private function makeContribution(int $id = 1, ?int $recurId = null): array {
     return [
       'id' => $id,
       'contribution_status_id:name' => 'Pending',
@@ -195,14 +192,14 @@ class MollieProcessingTest extends TestCase {
     ];
   }
 
-  private function makeChargeback(string $id, string $amount, ?object $reason = NULL): Chargeback {
+  private function makeChargeback(string $id, string $amount, ?object $reason = null): Chargeback {
     $client = $this->createMock(MollieApiClient::class);
     $cb = new Chargeback($client);
     $cb->id = $id;
     $cb->amount = $this->makeAmount($amount);
     $cb->createdAt = '2026-03-06T12:00:00+00:00';
     $cb->reason = $reason;
-    $cb->reversedAt = NULL;
+    $cb->reversedAt = null;
     return $cb;
   }
 
@@ -221,11 +218,11 @@ class MollieProcessingTest extends TestCase {
   }
 
   private function getApi3Calls(string $entity, string $action): array {
-    return array_filter(\Api3Mock::$calls, fn($c) => $c['entity'] === $entity && $c['action'] === $action);
+    return array_filter(\Api3Mock::$calls, fn ($c) => $c['entity'] === $entity && $c['action'] === $action);
   }
 
   private function getApi4Calls(string $entity, string $action): array {
-    return array_filter(Api4Mock::$calls, fn($c) => $c['entity'] === $entity && $c['action'] === $action);
+    return array_filter(Api4Mock::$calls, fn ($c) => $c['entity'] === $entity && $c['action'] === $action);
   }
 
   // -----------------------------------------------------------------------
@@ -234,7 +231,7 @@ class MollieProcessingTest extends TestCase {
 
   public function testCompleteContributionSkipsWhenTrxnExists(): void {
     $proc = $this->makeProcessor();
-    $proc->stubbedFinancialTrxnExists = TRUE;
+    $proc->stubbedFinancialTrxnExists = true;
 
     $proc->exposedCompleteContribution($this->makeContribution(), $this->makePayment());
 
@@ -300,7 +297,7 @@ class MollieProcessingTest extends TestCase {
 
   public function testHandleChargebackSkipsExistingTrxn(): void {
     $proc = $this->makeProcessor();
-    $proc->stubbedFinancialTrxnExists = TRUE;
+    $proc->stubbedFinancialTrxnExists = true;
     $payment = $this->makePayment();
     $payment->setChargebacks([$this->makeChargeback('chb_test1', '25.00')]);
 
@@ -337,7 +334,7 @@ class MollieProcessingTest extends TestCase {
 
   public function testHandleRefundSkipsExistingTrxn(): void {
     $proc = $this->makeProcessor();
-    $proc->stubbedFinancialTrxnExists = TRUE;
+    $proc->stubbedFinancialTrxnExists = true;
     $payment = $this->makePayment();
     $payment->setRefunds([$this->makeRefund('re_done', '25.00')]);
 
@@ -352,7 +349,7 @@ class MollieProcessingTest extends TestCase {
 
   public function testFirstRecurringNullMandateFailsRecur(): void {
     $proc = $this->makeProcessor();
-    $payment = $this->makePayment(['mandateId' => NULL]);
+    $payment = $this->makePayment(['mandateId' => null]);
     $contribution = $this->makeContribution(1, recurId: 10);
 
     $proc->exposedHandleFirstRecurringPaymentCompleted($contribution, $payment);
@@ -378,7 +375,7 @@ class MollieProcessingTest extends TestCase {
     $this->assertContains('createPaymentToken', $proc->calledMethods);
     // Should set recur to Completed.
     $updateCalls = array_values($this->getApi4Calls('ContributionRecur', 'update'));
-    $completedCall = array_filter($updateCalls, fn($c) => ($c['values']['contribution_status_id:name'] ?? '') === 'Completed');
+    $completedCall = array_filter($updateCalls, fn ($c) => ($c['values']['contribution_status_id:name'] ?? '') === 'Completed');
     $this->assertNotEmpty($completedCall);
   }
 
@@ -413,9 +410,9 @@ class MollieProcessingTest extends TestCase {
 
     // Recur updated to In Progress with subscription ID.
     $updateCalls = array_values($this->getApi4Calls('ContributionRecur', 'update'));
-    $inProgressCall = array_filter($updateCalls, fn($c) => ($c['values']['contribution_status_id:name'] ?? '') === 'In Progress');
+    $inProgressCall = array_filter($updateCalls, fn ($c) => ($c['values']['contribution_status_id:name'] ?? '') === 'In Progress');
     $this->assertNotEmpty($inProgressCall);
-    $subIdCall = array_filter($updateCalls, fn($c) => ($c['values']['processor_id'] ?? '') === 'sub_created');
+    $subIdCall = array_filter($updateCalls, fn ($c) => ($c['values']['processor_id'] ?? '') === 'sub_created');
     $this->assertNotEmpty($subIdCall);
   }
 
@@ -441,11 +438,10 @@ class MollieProcessingTest extends TestCase {
     $proc->stubbedMollieClient = $mockClient;
 
     // Must re-throw so the webhook returns HTTP 500 and Mollie retries.
-    $thrown = NULL;
+    $thrown = null;
     try {
       $proc->exposedHandleFirstRecurringPaymentCompleted($contribution, $payment);
-    }
-    catch (\Exception $thrown) {
+    } catch (\Exception $thrown) {
       // Expected.
     }
 
@@ -494,11 +490,10 @@ class MollieProcessingTest extends TestCase {
       }
     };
 
-    $thrown = NULL;
+    $thrown = null;
     try {
       $proc->exposedHandleFirstRecurringPaymentCompleted($contribution, $payment);
-    }
-    catch (\Exception $thrown) {
+    } catch (\Exception $thrown) {
       // Expected.
     }
 
@@ -533,7 +528,7 @@ class MollieProcessingTest extends TestCase {
 
     // The update that sets In Progress should also clear stale failure fields.
     $updateCalls = array_values($this->getApi4Calls('ContributionRecur', 'update'));
-    $inProgressCall = array_filter($updateCalls, fn($c) => ($c['values']['contribution_status_id:name'] ?? '') === 'In Progress');
+    $inProgressCall = array_filter($updateCalls, fn ($c) => ($c['values']['contribution_status_id:name'] ?? '') === 'In Progress');
     $this->assertNotEmpty($inProgressCall);
 
     $call = array_values($inProgressCall)[0];
@@ -592,7 +587,7 @@ class MollieProcessingTest extends TestCase {
 
     // next_sched_contribution_date should be advanced.
     $recurUpdates = array_values($this->getApi4Calls('ContributionRecur', 'update'));
-    $nextDateUpdate = array_filter($recurUpdates, fn($c) => isset($c['values']['next_sched_contribution_date']));
+    $nextDateUpdate = array_filter($recurUpdates, fn ($c) => isset($c['values']['next_sched_contribution_date']));
     $this->assertNotEmpty($nextDateUpdate);
     $this->assertSame('2026-05-01 00:00:00', array_values($nextDateUpdate)[0]['values']['next_sched_contribution_date']);
   }
@@ -622,7 +617,7 @@ class MollieProcessingTest extends TestCase {
 
   public function testCreateRecurringInstallmentSkipsWhenFinancialTrxnExists(): void {
     $proc = $this->makeProcessor();
-    $proc->stubbedFinancialTrxnExists = TRUE;
+    $proc->stubbedFinancialTrxnExists = true;
     $payment = $this->makePayment(['id' => 'tr_dupe1']);
 
     Api4Mock::setResult('Contribution.get', []);
@@ -679,7 +674,7 @@ class MollieProcessingTest extends TestCase {
 
     // failure_count should be incremented.
     $recurUpdates = array_values($this->getApi4Calls('ContributionRecur', 'update'));
-    $failureCountUpdate = array_filter($recurUpdates, fn($c) => isset($c['values']['failure_count']));
+    $failureCountUpdate = array_filter($recurUpdates, fn ($c) => isset($c['values']['failure_count']));
     $this->assertNotEmpty($failureCountUpdate);
     $this->assertSame(1, array_values($failureCountUpdate)[0]['values']['failure_count']);
   }
@@ -702,7 +697,7 @@ class MollieProcessingTest extends TestCase {
 
     // Existing contribution should still be marked as failed.
     $contribUpdates = array_values($this->getApi4Calls('Contribution', 'update'));
-    $failedUpdate = array_filter($contribUpdates, fn($c) => ($c['values']['contribution_status_id:name'] ?? '') === 'Failed');
+    $failedUpdate = array_filter($contribUpdates, fn ($c) => ($c['values']['contribution_status_id:name'] ?? '') === 'Failed');
     $this->assertNotEmpty($failedUpdate);
   }
 
@@ -718,7 +713,7 @@ class MollieProcessingTest extends TestCase {
     $proc->exposedRecordFailedRecurringInstallment($recur, $payment);
 
     $recurUpdates = array_values($this->getApi4Calls('ContributionRecur', 'update'));
-    $failureCountUpdate = array_filter($recurUpdates, fn($c) => isset($c['values']['failure_count']));
+    $failureCountUpdate = array_filter($recurUpdates, fn ($c) => isset($c['values']['failure_count']));
     $this->assertNotEmpty($failureCountUpdate);
     $this->assertSame(4, array_values($failureCountUpdate)[0]['values']['failure_count']);
   }
@@ -741,7 +736,7 @@ class MollieProcessingTest extends TestCase {
     $mockClient->subscriptions = $mockSubEndpoint;
     $proc->stubbedMollieClient = $mockClient;
 
-    $message = NULL;
+    $message = null;
     $result = $proc->exposedCancelSubscription($message, ['contributionRecurID' => 10]);
 
     $this->assertTrue($result);
@@ -762,7 +757,7 @@ class MollieProcessingTest extends TestCase {
     $mockClient->subscriptions = $mockSubEndpoint;
     $proc->stubbedMollieClient = $mockClient;
 
-    $message = NULL;
+    $message = null;
     $result = $proc->exposedCancelSubscription($message, ['contributionRecurID' => 10]);
 
     $this->assertTrue($result);
@@ -773,13 +768,13 @@ class MollieProcessingTest extends TestCase {
     $proc = $this->makeProcessor();
 
     Api4Mock::setResult('ContributionRecur.get', [[
-      'processor_id' => NULL, 'contact_id' => 100,
+      'processor_id' => null, 'contact_id' => 100,
     ]]);
 
     $this->expectException(PaymentProcessorException::class);
     $this->expectExceptionMessageMatches('/No Mollie subscription ID/');
 
-    $message = NULL;
+    $message = null;
     $proc->exposedCancelSubscription($message, ['contributionRecurID' => 10]);
   }
 
@@ -808,7 +803,7 @@ class MollieProcessingTest extends TestCase {
     $mockClient->subscriptions = $mockSubEndpoint;
     $proc->stubbedMollieClient = $mockClient;
 
-    $message = NULL;
+    $message = null;
     $result = $proc->exposedChangeSubscriptionAmount($message, [
       'contributionRecurID' => 10,
       'amount' => '30.00',
@@ -845,7 +840,7 @@ class MollieProcessingTest extends TestCase {
     $mockClient->subscriptions = $mockSubEndpoint;
     $proc->stubbedMollieClient = $mockClient;
 
-    $message = NULL;
+    $message = null;
     $proc->exposedChangeSubscriptionAmount($message, [
       'contributionRecurID' => 10,
       'amount' => '25.00',
@@ -864,7 +859,7 @@ class MollieProcessingTest extends TestCase {
     $this->expectException(PaymentProcessorException::class);
     $this->expectExceptionMessageMatches('/open-ended/');
 
-    $message = NULL;
+    $message = null;
     $proc->exposedChangeSubscriptionAmount($message, [
       'contributionRecurID' => 10,
       'amount' => '25.00',
@@ -883,7 +878,7 @@ class MollieProcessingTest extends TestCase {
     $this->expectException(PaymentProcessorException::class);
     $this->expectExceptionMessageMatches('/at least 2/');
 
-    $message = NULL;
+    $message = null;
     $proc->exposedChangeSubscriptionAmount($message, [
       'contributionRecurID' => 10,
       'amount' => '25.00',
@@ -896,12 +891,12 @@ class MollieProcessingTest extends TestCase {
 
     Api4Mock::setResult('ContributionRecur.get', [[
       'processor_id' => 'sub_abc', 'contact_id' => 100,
-      'currency' => 'EUR', 'installments' => NULL,
+      'currency' => 'EUR', 'installments' => null,
     ]]);
 
     $existingSub = new Subscription($this->createMock(MollieApiClient::class));
-    $existingSub->times = NULL;
-    $existingSub->timesRemaining = NULL;
+    $existingSub->times = null;
+    $existingSub->timesRemaining = null;
 
     $mockSubEndpoint = $this->createMock(SubscriptionEndpoint::class);
     $mockSubEndpoint->method('getForId')
@@ -918,7 +913,7 @@ class MollieProcessingTest extends TestCase {
     $mockClient->subscriptions = $mockSubEndpoint;
     $proc->stubbedMollieClient = $mockClient;
 
-    $message = NULL;
+    $message = null;
     $result = $proc->exposedChangeSubscriptionAmount($message, [
       'contributionRecurID' => 10,
       'amount' => '25.00',
@@ -950,7 +945,7 @@ class MollieProcessingTest extends TestCase {
     $this->expectException(PaymentProcessorException::class);
     $this->expectExceptionMessageMatches('/Failed to cancel/');
 
-    $message = NULL;
+    $message = null;
     $proc->exposedCancelSubscription($message, ['contributionRecurID' => 10]);
   }
 }

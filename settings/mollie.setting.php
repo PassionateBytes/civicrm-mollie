@@ -21,7 +21,7 @@ return [
   'mollie_reminder_enabled' => [
     'name' => 'mollie_reminder_enabled',
     'type' => 'Boolean',
-    'default' => FALSE,
+    'default' => false,
     'html_type' => 'checkbox',
     'title' => E::ts('Enable Pre-Payment Reminders'),
     'description' => E::ts('Send reminder emails before upcoming recurring charges.'),
@@ -51,7 +51,7 @@ return [
   'mollie_debug_logging' => [
     'name' => 'mollie_debug_logging',
     'type' => 'Boolean',
-    'default' => FALSE,
+    'default' => false,
     'html_type' => 'checkbox',
     'title' => E::ts('Enable Debug Logging'),
     'description' => E::ts('Log verbose Mollie API request/response data for troubleshooting.'),
