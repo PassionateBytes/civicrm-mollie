@@ -71,7 +71,7 @@ class MollieDoPaymentTest extends TestCase {
     $this->assertNull(\CRM_Utils_System::$redirectUrl);
   }
 
-  public function testZeroAmountRecurringAlsoCompletesImmediately(): void {
+  public function testZeroAmountRecurringThrowsException(): void {
     $processor = new DoPaymentTestableMollie(['user_name' => 'test_abc']);
 
     $params = [
@@ -83,12 +83,8 @@ class MollieDoPaymentTest extends TestCase {
       'contributionRecurID' => 42,
     ];
 
-    $result = $processor->callDoPayment($params);
-
-    // Zero-amount short-circuit applies regardless of is_recur.
-    // No Mollie customer, payment, or subscription is created.
-    $this->assertEquals('Completed', $result['payment_status']);
-    $this->assertNull(\CRM_Utils_System::$redirectUrl);
+    $this->expectException(PaymentProcessorException::class);
+    $processor->callDoPayment($params);
   }
 
   // -----------------------------------------------------------------------

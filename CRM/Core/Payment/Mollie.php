@@ -298,6 +298,11 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     // payment creates the mandate via Mollie checkout. A zero-amount "authorize
     // now, charge later" flow is currently not supported by this extension.
     if ($propertyBag->getAmount() == 0) {
+      if (!empty($params['is_recur'])) {
+        throw new PaymentProcessorException(
+          E::ts('Recurring contributions require a non-zero amount.')
+        );
+      }
       return $this->setStatusPaymentCompleted([]);
     }
 
