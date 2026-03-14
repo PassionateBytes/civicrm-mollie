@@ -1,7 +1,7 @@
 {if $error}
   <div class="messages status no-popup">
     <div class="icon inform-icon"></div>
-    {$error}
+    {$error|escape}
   </div>
 {else}
   {include file="CRM/Mollie/Page/MollieDetailTable.tpl" fields=$fields nested=false}
@@ -89,13 +89,13 @@
   {if $dashboardUrl || $relatedLinks || $documentationUrl}
     <div class="mollie-detail-footer">
       {if $dashboardUrl}
-        <a href="{$dashboardUrl}" onclick="window.open(this.href); return false;" class="button">
+        <a href="{$dashboardUrl|escape}" onclick="window.open(this.href); return false;" class="button">
           <span><i class="crm-i fa-external-link"></i> {ts domain="nl.stichtinggast.mollie"}Open in Mollie{/ts}</span>
         </a>
       {/if}
       <div class="mollie-related-links">
         {foreach from=$relatedLinks key=label item=href}
-          <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=$href"}" class="open-inline-noreturn"><i class="crm-i fa-arrow-circle-right"></i> {$label}</a>
+          <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=$href"}" class="open-inline-noreturn"><i class="crm-i fa-arrow-circle-right"></i> {$label|escape}</a>
         {/foreach}
         {if $documentationUrl}
           <a href="{$documentationUrl}" onclick="window.open(this.href); return false;"><i class="crm-i fa-book"></i> {ts domain="nl.stichtinggast.mollie"}API Docs{/ts}</a>

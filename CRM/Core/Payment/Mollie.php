@@ -208,6 +208,20 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       if ($newInstallments !== NULL && $newInstallments <= 1) {
         throw new PaymentProcessorException(E::ts('Installments must be at least 2 for a subscription.'));
       }
+      // Validate that the new times value exceeds payments already charged.
+      // Mollie's `times` is the total lifetime count, so setting it at or below
+      // the number already executed would immediately complete the subscription.
+      $subscription = $this->getMollieApiClient()->subscriptions->getForId($mollieCustomer, $recur['processor_id']);
+      if ($subscription->timesRemaining !== NULL) {
+        $timesExecuted = $subscription->times - $subscription->timesRemaining;
+        if ($newInstallments - 1 <= $timesExecuted) {
+          throw new PaymentProcessorException(E::ts(
+            'Cannot reduce installments below the %1 payments already charged by Mollie.',
+            [1 => $timesExecuted + 1]
+          ));
+        }
+      }
+
       $updateData['times'] = $newInstallments - 1;
     }
 
@@ -284,6 +298,11 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     // payment creates the mandate via Mollie checkout. A zero-amount "authorize
     // now, charge later" flow is currently not supported by this extension.
     if ($propertyBag->getAmount() == 0) {
+      if (!empty($params['is_recur'])) {
+        throw new PaymentProcessorException(
+          E::ts('Recurring contributions require a non-zero amount.')
+        );
+      }
       return $this->setStatusPaymentCompleted([]);
     }
 
@@ -403,10 +422,25 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
 
     $this->logDebug("Webhook received for payment {$paymentId}", ['mollie_payment_id' => $paymentId]);
 
+    // Prevent concurrent processing of webhooks for the same payment ID.
+    // Without this, two near-simultaneous webhooks could both read the
+    // contribution as Pending and each create a Payment record, doubling
+    // the financial transaction. The lock makes them run sequentially.
+    $lock = \Civi::lockManager()->acquire("worker.mollie.{$paymentId}", 10);
+    if (!$lock->isAcquired()) {
+      $this->logWarning("Timed out waiting for lock on payment {$paymentId}, requesting retry", [
+        'mollie_payment_id' => $paymentId,
+      ]);
+      http_response_code(500);
+      return;
+    }
+
     try {
       $molliePayment = $this->getMollieApiClient()->payments->get($paymentId);
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
+      $lock->release();
+
       $this->logError("Failed to fetch Mollie payment {$paymentId} in webhook: {$e->getMessage()}", [
         'mollie_payment_id' => $paymentId,
         'error' => $e->getMessage(),
@@ -444,9 +478,20 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       return;
     }
 
-    $this->routePaymentWebhook($molliePayment);
-
-    http_response_code(200);
+    try {
+      $this->routePaymentWebhook($molliePayment);
+      http_response_code(200);
+    }
+    catch (\Exception $e) {
+      $this->logError("Webhook processing failed for {$paymentId}: {$e->getMessage()}", [
+        'mollie_payment_id' => $paymentId,
+        'error' => $e->getMessage(),
+      ]);
+      http_response_code(500);
+    }
+    finally {
+      $lock->release();
+    }
   }
 
   /**
@@ -567,9 +612,12 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   protected function processRecurringPaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment, ?array $existingContribution = NULL): void {
     $subscriptionId = $molliePayment->subscriptionId;
 
-    // Idempotency: skip if we already recorded this payment.
-    if ($existingContribution !== NULL) {
-      $this->logDebug("Recurring payment {$molliePayment->id} already recorded as Contribution #{$existingContribution['id']}, skipping", [
+    // Idempotency: skip if we already fully processed this payment.
+    // A Pending contribution indicates a partial failure on a previous attempt
+    // (e.g., repeattransaction succeeded but Payment.create failed), so we
+    // allow retry processing to complete it.
+    if ($existingContribution !== NULL && $existingContribution['contribution_status_id:name'] !== 'Pending') {
+      $this->logDebug("Recurring payment {$molliePayment->id} already recorded as Contribution #{$existingContribution['id']} ({$existingContribution['contribution_status_id:name']}), skipping", [
         'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $existingContribution['id'],
       ]);
@@ -678,6 +726,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'contribution_id' => $contribution['id'],
         'error' => $e->getMessage(),
       ]);
+      throw $e;
     }
   }
 
@@ -711,6 +760,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'contribution_id' => $contribution['id'],
         'error' => $e->getMessage(),
       ]);
+      throw $e;
     }
   }
 
@@ -750,6 +800,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'contribution_recur_id' => $recurId,
         'error' => $e->getMessage(),
       ]);
+      throw $e;
     }
   }
 
@@ -1089,6 +1140,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   protected function handleFirstRecurringPaymentCompleted(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
     $recurId = $contribution['contribution_recur_id'];
     $customerId = $molliePayment->customerId;
+    $subscriptionId = NULL;
 
     try {
       // The payment object carries the mandateId that Mollie created from
@@ -1158,6 +1210,26 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'contribution_recur_id' => $recurId,
         'error' => $e->getMessage(),
       ]);
+
+      // Clean up: if a subscription was already created on Mollie before
+      // the failure, cancel it to avoid orphaned charges.
+      if ($subscriptionId !== NULL) {
+        try {
+          $this->getMollieApiClient()->subscriptions->cancelForId($customerId, $subscriptionId);
+          $this->logInfo("Cancelled orphaned subscription {$subscriptionId} during failed setup of ContributionRecur #{$recurId}", [
+            'subscription_id' => $subscriptionId,
+            'contribution_recur_id' => $recurId,
+          ]);
+        }
+        catch (\Exception $cancelException) {
+          $this->logError("Failed to cancel orphaned subscription {$subscriptionId} for ContributionRecur #{$recurId}: {$cancelException->getMessage()}", [
+            'subscription_id' => $subscriptionId,
+            'contribution_recur_id' => $recurId,
+            'error' => $cancelException->getMessage(),
+          ]);
+        }
+      }
+
       $this->failContributionRecur($recurId, $molliePayment);
     }
   }
@@ -1237,12 +1309,23 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       }
     }
 
-    try {
+    // If a Pending contribution already exists for this payment (partial failure
+    // on a previous webhook attempt), reuse it instead of creating a new one.
+    $existingContribution = $this->findContributionByTrxnId($molliePayment->id);
+    if ($existingContribution !== NULL && $existingContribution['contribution_status_id:name'] === 'Pending') {
+      $contributionId = $existingContribution['id'];
+      $this->logInfo("Found existing Pending Contribution #{$contributionId} for {$molliePayment->id}, retrying completion", [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_id' => $contributionId,
+      ]);
+    }
+    else {
       // Create contribution as Pending via repeattransaction (handles template
       // cloning, line items, soft credits, custom fields), then record the
       // payment via Payment.create for proper financial bookkeeping.
       $result = civicrm_api3('Contribution', 'repeattransaction', [
         'contribution_recur_id' => $contributionRecur['id'],
+        'contribution_status_id' => 'Pending',
         'trxn_id' => $molliePayment->id,
         'payment_processor_id' => $contributionRecur['payment_processor_id'],
         'receive_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
@@ -1250,43 +1333,36 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ]);
 
       $contributionId = $result['id'];
-
-      $paymentParams = [
-        'contribution_id' => $contributionId,
-        'total_amount' => $molliePayment->amount->value,
-        'trxn_id' => $molliePayment->id,
-        'trxn_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
-        'payment_processor_id' => $contributionRecur['payment_processor_id'],
-        'is_send_contribution_notification' => TRUE,
-      ];
-      if ($feeAmount !== NULL) {
-        $paymentParams['fee_amount'] = $feeAmount;
-      }
-
-      civicrm_api3('Payment', 'create', $paymentParams);
-
-      $nextDate = $this->calculateNextScheduledDate($contributionRecur);
-      if ($nextDate !== NULL) {
-        \Civi\Api4\ContributionRecur::update(FALSE)
-          ->addWhere('id', '=', $contributionRecur['id'])
-          ->addValue('next_sched_contribution_date', $nextDate)
-          ->execute();
-      }
-
-      $amount = $molliePayment->amount->value;
-      $this->logInfo("Recurring installment recorded for ContributionRecur #{$contributionRecur['id']}: {$amount} (mollie: {$molliePayment->id})", [
-        'contribution_recur_id' => $contributionRecur['id'],
-        'mollie_payment_id' => $molliePayment->id,
-        'amount' => $amount,
-      ]);
     }
-    catch (\Exception $e) {
-      $this->logError("Failed to record recurring installment for ContributionRecur #{$contributionRecur['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
-        'contribution_recur_id' => $contributionRecur['id'],
-        'mollie_payment_id' => $molliePayment->id,
-        'error' => $e->getMessage(),
-      ]);
+
+    $paymentParams = [
+      'contribution_id' => $contributionId,
+      'total_amount' => $molliePayment->amount->value,
+      'trxn_id' => $molliePayment->id,
+      'trxn_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
+      'payment_processor_id' => $contributionRecur['payment_processor_id'],
+      'is_send_contribution_notification' => TRUE,
+    ];
+    if ($feeAmount !== NULL) {
+      $paymentParams['fee_amount'] = $feeAmount;
     }
+
+    civicrm_api3('Payment', 'create', $paymentParams);
+
+    $nextDate = $this->calculateNextScheduledDate($contributionRecur);
+    if ($nextDate !== NULL) {
+      \Civi\Api4\ContributionRecur::update(FALSE)
+        ->addWhere('id', '=', $contributionRecur['id'])
+        ->addValue('next_sched_contribution_date', $nextDate)
+        ->execute();
+    }
+
+    $amount = $molliePayment->amount->value;
+    $this->logInfo("Recurring installment recorded for ContributionRecur #{$contributionRecur['id']}: {$amount} (mollie: {$molliePayment->id})", [
+      'contribution_recur_id' => $contributionRecur['id'],
+      'mollie_payment_id' => $molliePayment->id,
+      'amount' => $amount,
+    ]);
   }
 
   /**
@@ -1296,12 +1372,23 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * @param \Mollie\Api\Resources\Payment $molliePayment
    */
   protected function recordFailedRecurringInstallment(array $contributionRecur, \Mollie\Api\Resources\Payment $molliePayment): void {
-    try {
+    // If a Pending contribution already exists for this payment (partial failure
+    // on a previous webhook attempt), reuse it instead of creating a new one.
+    $existingContribution = $this->findContributionByTrxnId($molliePayment->id);
+    if ($existingContribution !== NULL && $existingContribution['contribution_status_id:name'] === 'Pending') {
+      $contributionId = $existingContribution['id'];
+      $this->logInfo("Found existing Pending Contribution #{$contributionId} for {$molliePayment->id}, retrying failure recording", [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_id' => $contributionId,
+      ]);
+    }
+    else {
       // repeattransaction creates contributions in Pending status and only
       // transitions to Completed via completeOrder(). For failed payments we
       // create as Pending, then use failContribution() to set the correct status.
       $result = civicrm_api3('Contribution', 'repeattransaction', [
         'contribution_recur_id' => $contributionRecur['id'],
+        'contribution_status_id' => 'Pending',
         'trxn_id' => $molliePayment->id,
         'payment_processor_id' => $contributionRecur['payment_processor_id'],
         'receive_date' => date('Y-m-d H:i:s'),
@@ -1309,27 +1396,21 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ]);
 
       $contributionId = $result['id'] ?? NULL;
-      if ($contributionId) {
-        $this->failContribution(['id' => $contributionId], $molliePayment);
-      }
-
-      \Civi\Api4\ContributionRecur::update(FALSE)
-        ->addWhere('id', '=', $contributionRecur['id'])
-        ->addValue('failure_count', ($contributionRecur['failure_count'] ?? 0) + 1)
-        ->execute();
-
-      $this->logWarning("Recurring installment failed for ContributionRecur #{$contributionRecur['id']} (mollie: {$molliePayment->id})", [
-        'contribution_recur_id' => $contributionRecur['id'],
-        'mollie_payment_id' => $molliePayment->id,
-      ]);
     }
-    catch (\Exception $e) {
-      $this->logError("Failed to record failed recurring installment for ContributionRecur #{$contributionRecur['id']} (mollie: {$molliePayment->id}): {$e->getMessage()}", [
-        'mollie_payment_id' => $molliePayment->id,
-        'contribution_recur_id' => $contributionRecur['id'],
-        'error' => $e->getMessage(),
-      ]);
+
+    if ($contributionId) {
+      $this->failContribution(['id' => $contributionId], $molliePayment);
     }
+
+    \Civi\Api4\ContributionRecur::update(FALSE)
+      ->addWhere('id', '=', $contributionRecur['id'])
+      ->addValue('failure_count', ($contributionRecur['failure_count'] ?? 0) + 1)
+      ->execute();
+
+    $this->logWarning("Recurring installment failed for ContributionRecur #{$contributionRecur['id']} (mollie: {$molliePayment->id})", [
+      'contribution_recur_id' => $contributionRecur['id'],
+      'mollie_payment_id' => $molliePayment->id,
+    ]);
   }
 
   // ---------------------------------------------------------------------------
@@ -1368,11 +1449,17 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ->first();
 
     try {
-      $mollieCustomer = $this->getMollieApiClient()->customers->create([
-        'name' => $contact['display_name'] ?? '',
-        'email' => $contact['email_primary.email'] ?? '',
+      $customerParams = [
         'metadata' => ['civicrm' => ['contact_id' => $contactId]],
-      ]);
+      ];
+      if (!empty($contact['display_name'])) {
+        $customerParams['name'] = $contact['display_name'];
+      }
+      if (!empty($contact['email_primary.email'])) {
+        $customerParams['email'] = $contact['email_primary.email'];
+      }
+
+      $mollieCustomer = $this->getMollieApiClient()->customers->create($customerParams);
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
       $this->logError("Failed to create Mollie customer for Contact #{$contactId}: {$e->getMessage()}", [
@@ -1489,15 +1576,16 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * @throws PaymentProcessorException
    */
   protected function mapCiviCrmFrequencyToMollie(string $frequencyUnit, int $frequencyInterval): string {
-    return match ($frequencyUnit) {
-      'day' => "$frequencyInterval days",
-      'week' => "$frequencyInterval weeks",
-      'month' => "$frequencyInterval months",
-      'year' => ($frequencyInterval * 12) . ' months',
+    $n = $frequencyUnit === 'year' ? $frequencyInterval * 12 : $frequencyInterval;
+    $unit = match ($frequencyUnit) {
+      'day' => $n === 1 ? 'day' : 'days',
+      'week' => $n === 1 ? 'week' : 'weeks',
+      'month', 'year' => $n === 1 ? 'month' : 'months',
       default => throw new PaymentProcessorException(
         E::ts('Unsupported recurring frequency: %1', [1 => $frequencyUnit])
       ),
     };
+    return "$n $unit";
   }
 
   /**
@@ -1514,13 +1602,17 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    */
   protected function computeSubscriptionStartDate(array $recur): string {
     if (!empty($recur['next_sched_contribution_date'])) {
-      return date('Y-m-d', strtotime($recur['next_sched_contribution_date']));
+      $date = date('Y-m-d', strtotime($recur['next_sched_contribution_date']));
+    }
+    else {
+      $interval = $recur['frequency_interval'] ?? 1;
+      $unit = $recur['frequency_unit'] ?? 'month';
+      $date = date('Y-m-d', strtotime("+{$interval} {$unit}"));
     }
 
-    $interval = $recur['frequency_interval'] ?? 1;
-    $unit = $recur['frequency_unit'] ?? 'month';
-
-    return date('Y-m-d', strtotime("+{$interval} {$unit}"));
+    // Mollie requires a future start date.
+    $tomorrow = date('Y-m-d', strtotime('+1 day'));
+    return $date >= $tomorrow ? $date : $tomorrow;
   }
 
   /**
@@ -1555,13 +1647,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    *   Mollie-compatible locale string (e.g. 'nl_NL') or null.
    */
   protected function getMollieLocale(int $contactId): ?string {
-    $mollieLocales = [
-      'en_US', 'en_GB', 'nl_NL', 'nl_BE', 'fr_FR', 'fr_BE',
-      'de_DE', 'de_AT', 'de_CH', 'es_ES', 'ca_ES', 'pt_PT',
-      'it_IT', 'nb_NO', 'sv_SE', 'fi_FI', 'da_DK', 'is_IS',
-      'hu_HU', 'pl_PL', 'lv_LV', 'lt_LT',
-    ];
-
+    // Mollie accepts any xx_XX locale and falls back to browser language for
+    // unsupported values. No need to maintain an allowlist — just pass through
+    // the contact's preferred language if set.
+    // See: https://docs.mollie.com/reference/create-payment (locale parameter).
     try {
       $contacts = \Civi\Api4\Contact::get(FALSE)
         ->addSelect('preferred_language')
@@ -1569,16 +1658,12 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         ->setLimit(1)
         ->execute();
 
-      $lang = $contacts->first()['preferred_language'] ?? NULL;
-      if ($lang !== NULL && in_array($lang, $mollieLocales, TRUE)) {
-        return $lang;
-      }
+      return $contacts->first()['preferred_language'] ?? NULL;
     }
     catch (\Exception $e) {
       // Non-critical — proceed without locale.
+      return NULL;
     }
-
-    return NULL;
   }
 
   // ---------------------------------------------------------------------------

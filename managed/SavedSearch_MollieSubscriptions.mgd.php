@@ -36,6 +36,9 @@ return [
           'orderBy' => [
             'start_date' => 'DESC',
           ],
+          // CiviCRM APIv4 automatically adds "WHERE is_test = 0" unless
+          // is_test appears in the WHERE clause. The OR tautology bypasses
+          // this so both test and live records are available for filtering.
           'where' => [
             ['processor_id', 'IS NOT NULL'],
             ['processor_id', '!=', ''],

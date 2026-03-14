@@ -397,12 +397,11 @@ class MollieProcessingTest extends TestCase {
     $mockClient->subscriptions = $mockSubEndpoint;
     $proc->stubbedMollieClient = $mockClient;
 
+    $mockSubEndpoint->expects($this->never())->method('cancelForId');
+
     $proc->exposedHandleFirstRecurringPaymentCompleted($contribution, $payment);
 
     $this->assertContains('createPaymentToken', $proc->calledMethods);
-
-    // Subscription created — verify the endpoint was called.
-    $mockSubEndpoint->expects($this->never())->method('cancelForId');
 
     // Recur updated to In Progress with subscription ID.
     $updateCalls = array_values($this->getApi4Calls('ContributionRecur', 'update'));
@@ -515,7 +514,13 @@ class MollieProcessingTest extends TestCase {
       'currency' => 'EUR', 'installments' => 6,
     ]]);
 
+    $existingSub = new Subscription($this->createMock(MollieApiClient::class));
+    $existingSub->times = 5;
+    $existingSub->timesRemaining = 3;
+
     $mockSubEndpoint = $this->createMock(SubscriptionEndpoint::class);
+    $mockSubEndpoint->method('getForId')
+      ->willReturn($existingSub);
     $mockSubEndpoint->expects($this->once())
       ->method('update')
       ->with('cst_test123', 'sub_abc', $this->callback(function ($data) {
@@ -572,5 +577,68 @@ class MollieProcessingTest extends TestCase {
       'amount' => '25.00',
       'installments' => 1,
     ]);
+  }
+
+  public function testChangeInstallmentsOpenEndedToFiniteSendsTimes(): void {
+    $proc = $this->makeProcessor();
+
+    Api4Mock::setResult('ContributionRecur.get', [[
+      'processor_id' => 'sub_abc', 'contact_id' => 100,
+      'currency' => 'EUR', 'installments' => NULL,
+    ]]);
+
+    $existingSub = new Subscription($this->createMock(MollieApiClient::class));
+    $existingSub->times = NULL;
+    $existingSub->timesRemaining = NULL;
+
+    $mockSubEndpoint = $this->createMock(SubscriptionEndpoint::class);
+    $mockSubEndpoint->method('getForId')
+      ->willReturn($existingSub);
+    $mockSubEndpoint->expects($this->once())
+      ->method('update')
+      ->with('cst_test123', 'sub_abc', $this->callback(function ($data) {
+        // times = 12 - 1 = 11
+        return $data['times'] === 11;
+      }))
+      ->willReturn(new Subscription($this->createMock(MollieApiClient::class)));
+
+    $mockClient = $this->createMock(MollieApiClient::class);
+    $mockClient->subscriptions = $mockSubEndpoint;
+    $proc->stubbedMollieClient = $mockClient;
+
+    $message = NULL;
+    $result = $proc->exposedChangeSubscriptionAmount($message, [
+      'contributionRecurID' => 10,
+      'amount' => '25.00',
+      'installments' => 12,
+    ]);
+
+    $this->assertTrue($result);
+  }
+
+  // -----------------------------------------------------------------------
+  // cancelSubscription — error handling
+  // -----------------------------------------------------------------------
+
+  public function testCancelSubscriptionApiErrorThrowsPaymentProcessorException(): void {
+    $proc = $this->makeProcessor();
+
+    Api4Mock::setResult('ContributionRecur.get', [[
+      'processor_id' => 'sub_abc', 'contact_id' => 100,
+    ]]);
+
+    $mockSubEndpoint = $this->createMock(SubscriptionEndpoint::class);
+    $mockSubEndpoint->method('cancelForId')
+      ->willThrowException(new ApiException('Server error', 500));
+
+    $mockClient = $this->createMock(MollieApiClient::class);
+    $mockClient->subscriptions = $mockSubEndpoint;
+    $proc->stubbedMollieClient = $mockClient;
+
+    $this->expectException(PaymentProcessorException::class);
+    $this->expectExceptionMessageMatches('/Failed to cancel/');
+
+    $message = NULL;
+    $proc->exposedCancelSubscription($message, ['contributionRecurID' => 10]);
   }
 }

@@ -99,6 +99,32 @@ class WebhookTestableMolliePayment extends \CRM_Core_Payment_Mollie {
   }
 }
 
+/**
+ * Test subclass for handlePaymentNotification entry point (lock, HTTP codes).
+ */
+class NotificationTestableMollie extends \CRM_Core_Payment_Mollie {
+
+  public bool $routeWasCalled = FALSE;
+  public ?MollieApiClient $stubbedClient = NULL;
+
+  public function __construct() {
+    $this->_paymentProcessor = ['id' => 1, 'user_name' => 'test_abc'];
+    $this->_mode = 'test';
+  }
+
+  public function callHandlePaymentNotification(): void {
+    $this->handlePaymentNotification();
+  }
+
+  protected function getMollieApiClient(): MollieApiClient {
+    return $this->stubbedClient;
+  }
+
+  protected function routePaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment): void {
+    $this->routeWasCalled = TRUE;
+  }
+}
+
 class MollieWebhookTest extends TestCase {
 
   private function makePayment(array $props): Payment {
@@ -346,9 +372,10 @@ class MollieWebhookTest extends TestCase {
     $this->assertSame(['recordFailedRecurringInstallment'], $processor->calledMethods);
   }
 
-  public function testRecurringIdempotencySkipsDuplicate(): void {
+  public function testRecurringIdempotencySkipsCompletedDuplicate(): void {
     $processor = new WebhookTestableMolliePayment();
     $existing = $this->makePendingContribution();
+    $existing['contribution_status_id:name'] = 'Completed';
 
     $payment = $this->makePayment([
       'status' => 'paid',
@@ -357,6 +384,34 @@ class MollieWebhookTest extends TestCase {
     $processor->exposedProcessRecurringPaymentWebhook($payment, $existing);
 
     $this->assertSame([], $processor->calledMethods);
+  }
+
+  public function testRecurringIdempotencySkipsFailedDuplicate(): void {
+    $processor = new WebhookTestableMolliePayment();
+    $existing = $this->makePendingContribution();
+    $existing['contribution_status_id:name'] = 'Failed';
+
+    $payment = $this->makePayment([
+      'status' => 'failed',
+      'subscriptionId' => 'sub_test',
+    ]);
+    $processor->exposedProcessRecurringPaymentWebhook($payment, $existing);
+
+    $this->assertSame([], $processor->calledMethods);
+  }
+
+  public function testRecurringPendingContributionAllowsRetry(): void {
+    $processor = new WebhookTestableMolliePayment();
+    $processor->stubbedContributionRecur = ['id' => 10, 'payment_processor_id' => 1];
+    $existing = $this->makePendingContribution();
+
+    $payment = $this->makePayment([
+      'status' => 'paid',
+      'subscriptionId' => 'sub_test',
+    ]);
+    $processor->exposedProcessRecurringPaymentWebhook($payment, $existing);
+
+    $this->assertSame(['createRecurringInstallment'], $processor->calledMethods);
   }
 
   public function testRecurringUnknownSubscriptionSkips(): void {
@@ -412,5 +467,49 @@ class MollieWebhookTest extends TestCase {
     $processor->exposedProcessOneOffOrFirstPaymentWebhook($payment, $contribution);
 
     $this->assertArrayNotHasKey('fee_amount', $processor->completeContributionParams);
+  }
+
+  // -----------------------------------------------------------------------
+  // handlePaymentNotification — lock behavior
+  // -----------------------------------------------------------------------
+
+  public function testLockTimeoutReturnsHttp500ForRetry(): void {
+    \CiviLockManagerMock::$acquireSucceeds = FALSE;
+    $_POST['id'] = 'tr_lock_test';
+
+    $processor = new NotificationTestableMollie();
+    $processor->callHandlePaymentNotification();
+
+    $this->assertFalse($processor->routeWasCalled);
+
+    // Clean up.
+    \CiviLockManagerMock::reset();
+    unset($_POST['id']);
+  }
+
+  public function testLockAcquiredAllowsProcessing(): void {
+    \CiviLockManagerMock::$acquireSucceeds = TRUE;
+    $_POST['id'] = 'tr_lock_ok';
+
+    $molliePayment = new Payment($this->createMock(MollieApiClient::class));
+    $molliePayment->id = 'tr_lock_ok';
+    $molliePayment->status = 'paid';
+    $molliePayment->paidAt = '2026-03-06T12:00:00+00:00';
+
+    $mockClient = $this->createMock(MollieApiClient::class);
+    $mockPayments = $this->createMock(\Mollie\Api\Endpoints\PaymentEndpoint::class);
+    $mockPayments->method('get')->willReturn($molliePayment);
+    $mockClient->payments = $mockPayments;
+
+    $processor = new NotificationTestableMollie();
+    $processor->stubbedClient = $mockClient;
+    $processor->callHandlePaymentNotification();
+
+    $this->assertTrue($processor->routeWasCalled);
+    $this->assertContains('worker.mollie.tr_lock_ok', \CiviLockManagerMock::$acquiredLocks);
+
+    // Clean up.
+    \CiviLockManagerMock::reset();
+    unset($_POST['id']);
   }
 }

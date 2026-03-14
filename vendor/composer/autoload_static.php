@@ -37,6 +37,8 @@ class ComposerStaticInit674da7c4ab6e7c55676d2883698d7105
         'CRM_Core_Payment_Mollie' => __DIR__ . '/../..' . '/CRM/Core/Payment/Mollie.php',
         'CRM_Mollie_DAO_MollieCustomer' => __DIR__ . '/../..' . '/CRM/Mollie/DAO/MollieCustomer.php',
         'CRM_Mollie_Form_Settings' => __DIR__ . '/../..' . '/CRM/Mollie/Form/Settings.php',
+        'CRM_Mollie_Log' => __DIR__ . '/../..' . '/CRM/Mollie/Log.php',
+        'CRM_Mollie_Page_MollieDetail' => __DIR__ . '/../..' . '/CRM/Mollie/Page/MollieDetail.php',
         'CRM_Mollie_Upgrader' => __DIR__ . '/../..' . '/CRM/Mollie/Upgrader.php',
         'CRM_Mollie_WorkflowMessage_RecurringReminder' => __DIR__ . '/../..' . '/CRM/Mollie/WorkflowMessage/RecurringReminder.php',
         'Composer\\InstalledVersions' => __DIR__ . '/..' . '/composer/InstalledVersions.php',

@@ -76,9 +76,24 @@ class MolliePaymentTest extends TestCase {
   // mapCiviCrmFrequencyToMollie
   // -----------------------------------------------------------------------
 
-  public function testMapFrequencyMonthly(): void {
+  public function testMapFrequencyMonthlySingular(): void {
+    $payment = new TestableMolliePayment();
+    $this->assertSame('1 month', $payment->exposedMapCiviCrmFrequencyToMollie('month', 1));
+  }
+
+  public function testMapFrequencyMonthlyPlural(): void {
     $payment = new TestableMolliePayment();
     $this->assertSame('5 months', $payment->exposedMapCiviCrmFrequencyToMollie('month', 5));
+  }
+
+  public function testMapFrequencyWeeklySingular(): void {
+    $payment = new TestableMolliePayment();
+    $this->assertSame('1 week', $payment->exposedMapCiviCrmFrequencyToMollie('week', 1));
+  }
+
+  public function testMapFrequencyYearSingular(): void {
+    $payment = new TestableMolliePayment();
+    $this->assertSame('12 months', $payment->exposedMapCiviCrmFrequencyToMollie('year', 1));
   }
 
   public function testMapFrequencyYearToMonths(): void {
@@ -160,6 +175,26 @@ class MolliePaymentTest extends TestCase {
     ]);
     $expected = date('Y-m-d', strtotime('+1 year'));
     $this->assertSame($expected, $result);
+  }
+
+  public function testStartDateTodayBumpedToTomorrow(): void {
+    $payment = new TestableMolliePayment();
+    $result = $payment->exposedComputeSubscriptionStartDate([
+      'next_sched_contribution_date' => date('Y-m-d') . ' 00:00:00',
+      'frequency_interval' => 1,
+      'frequency_unit' => 'month',
+    ]);
+    $this->assertSame(date('Y-m-d', strtotime('+1 day')), $result);
+  }
+
+  public function testStartDatePastBumpedToTomorrow(): void {
+    $payment = new TestableMolliePayment();
+    $result = $payment->exposedComputeSubscriptionStartDate([
+      'next_sched_contribution_date' => '2020-01-01 00:00:00',
+      'frequency_interval' => 1,
+      'frequency_unit' => 'month',
+    ]);
+    $this->assertSame(date('Y-m-d', strtotime('+1 day')), $result);
   }
 
   // -----------------------------------------------------------------------

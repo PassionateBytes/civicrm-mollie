@@ -33,12 +33,14 @@ class Run extends AbstractAction {
       'completed' => 0,
       'cancelled' => 0,
       'failed' => 0,
+      'suspensions_recovered' => 0,
       'cancellations_retried' => 0,
       'cancellations_failed' => 0,
       'errors' => 0,
     ];
 
     $this->syncFromMollie($stats);
+    $this->recoverSuspended($stats);
     $this->retryCancellations($stats);
 
     \CRM_Mollie_Log::info('MollieSync completed', $stats);
@@ -72,7 +74,7 @@ class Run extends AbstractAction {
       $stats['checked']++;
 
       try {
-        $mollieCustomerId = self::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
+        $mollieCustomerId = static::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
         if ($mollieCustomerId === NULL) {
           \CRM_Mollie_Log::warning("Sync: no Mollie customer for ContributionRecur #{$recur['id']}", [
             'contribution_recur_id' => $recur['id'],
@@ -80,8 +82,8 @@ class Run extends AbstractAction {
           continue;
         }
 
-        $client = self::getClientForProcessor($recur['payment_processor_id']);
-        $subscription = self::throttledApiCall(
+        $client = static::getClientForProcessor($recur['payment_processor_id']);
+        $subscription = static::throttledApiCall(
           fn() => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id'])
         );
 
@@ -185,15 +187,89 @@ class Run extends AbstractAction {
   }
 
   /**
+   * Check recently failed subscriptions for reactivation on Mollie.
+   *
+   * When Mollie suspends a subscription (e.g., failed mandate), it maps to
+   * CiviCRM Failed status. If the mandate is later fixed, Mollie may
+   * reactivate the subscription. This method detects that and recovers
+   * the CiviCRM record. Limited to 30 days to avoid unbounded growth.
+   *
+   * @param array $stats
+   */
+  protected function recoverSuspended(array &$stats): void {
+    $failedRecurs = ContributionRecur::get(FALSE)
+      ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id',
+        'contribution_status_id:name', 'next_sched_contribution_date', 'amount',
+        'currency', 'end_date', 'cancel_date')
+      ->addWhere('processor_id', 'LIKE', 'sub_%')
+      ->addWhere('contribution_status_id:name', '=', 'Failed')
+      ->addWhere('modified_date', '>=', date('Y-m-d', strtotime('-30 days')))
+      ->addWhere('is_test', 'IN', [0, 1])
+      ->addJoin('PaymentProcessorType AS ppt', 'INNER',
+        ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
+        ['ppt.name', '=', '"mollie"']
+      )
+      ->execute();
+
+    foreach ($failedRecurs as $recur) {
+      try {
+        $mollieCustomerId = static::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
+        if ($mollieCustomerId === NULL) {
+          continue;
+        }
+
+        $client = static::getClientForProcessor($recur['payment_processor_id']);
+        $subscription = static::throttledApiCall(
+          fn() => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id'])
+        );
+
+        if ($subscription->status !== 'active') {
+          continue;
+        }
+
+        $updates = $this->buildUpdatesFromSubscription($subscription, $recur);
+        if (empty($updates)) {
+          continue;
+        }
+
+        $update = ContributionRecur::update(FALSE)
+          ->addWhere('id', '=', $recur['id']);
+        foreach ($updates as $field => $value) {
+          $update->addValue($field, $value);
+        }
+        $update->execute();
+
+        $stats['suspensions_recovered']++;
+
+        \CRM_Mollie_Log::info("Sync: recovered suspended subscription {$recur['processor_id']} for ContributionRecur #{$recur['id']}", [
+          'contribution_recur_id' => $recur['id'],
+          'subscription_id' => $recur['processor_id'],
+        ]);
+      }
+      catch (\Exception $e) {
+        $stats['errors']++;
+        \CRM_Mollie_Log::error("Sync: failed to check suspended subscription for ContributionRecur #{$recur['id']}: {$e->getMessage()}", [
+          'contribution_recur_id' => $recur['id'],
+          'error' => $e->getMessage(),
+        ]);
+      }
+    }
+  }
+
+  /**
    * Retry cancellations that failed to reach Mollie.
    *
    * @param array $stats
    */
   protected function retryCancellations(array &$stats): void {
+    // Only check recently cancelled subscriptions to avoid scanning the full
+    // history on every run. 7 days is generous enough to survive a few days of
+    // cron downtime while keeping the query bounded as cancellations accumulate.
     $cancelledRecurs = ContributionRecur::get(FALSE)
       ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id')
       ->addWhere('processor_id', 'LIKE', 'sub_%')
       ->addWhere('contribution_status_id:name', '=', 'Cancelled')
+      ->addWhere('cancel_date', '>=', date('Y-m-d', strtotime('-7 days')))
       ->addWhere('is_test', 'IN', [0, 1])
       ->addJoin('PaymentProcessorType AS ppt', 'INNER',
         ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
@@ -203,13 +279,13 @@ class Run extends AbstractAction {
 
     foreach ($cancelledRecurs as $recur) {
       try {
-        $mollieCustomerId = self::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
+        $mollieCustomerId = static::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
         if ($mollieCustomerId === NULL) {
           continue;
         }
 
-        $client = self::getClientForProcessor($recur['payment_processor_id']);
-        $subscription = self::throttledApiCall(
+        $client = static::getClientForProcessor($recur['payment_processor_id']);
+        $subscription = static::throttledApiCall(
           fn() => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id'])
         );
 
@@ -217,7 +293,7 @@ class Run extends AbstractAction {
           continue;
         }
 
-        self::throttledApiCall(
+        static::throttledApiCall(
           fn() => $client->subscriptions->cancelForId($mollieCustomerId, $recur['processor_id'])
         );
         $stats['cancellations_retried']++;
@@ -281,13 +357,20 @@ class Run extends AbstractAction {
    *
    * @return \Mollie\Api\MollieApiClient
    */
+  protected static array $clientCache = [];
+
   protected static function getClientForProcessor(int $processorId): \Mollie\Api\MollieApiClient {
+    if (isset(self::$clientCache[$processorId])) {
+      return self::$clientCache[$processorId];
+    }
+
     $processor = System::singleton()->getById($processorId);
     $processorConfig = $processor->getPaymentProcessor();
     $apiKey = $processorConfig['user_name'] ?? '';
 
     $client = new \Mollie\Api\MollieApiClient();
     $client->setApiKey($apiKey);
+    self::$clientCache[$processorId] = $client;
 
     return $client;
   }

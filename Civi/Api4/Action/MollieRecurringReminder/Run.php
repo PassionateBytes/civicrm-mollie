@@ -73,7 +73,7 @@ class Run extends AbstractAction {
           continue;
         }
 
-        self::sendReminder($recur, $contact);
+        static::sendReminder($recur, $contact);
         self::recordReminderActivity($recur, $activityTypeId);
 
         $stats['sent']++;
