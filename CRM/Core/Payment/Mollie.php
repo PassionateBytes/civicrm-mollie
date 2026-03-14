@@ -1851,12 +1851,13 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     $metaRecurId = $metadata->civicrm->contribution_recur_id ?? NULL;
 
     $rows = [];
-    $rows[] = $this->detailRow(E::ts('Reason'), '<strong>' . htmlspecialchars($reason) . '</strong>');
+    $rows[] = $this->detailRow(E::ts('Reason'), '<strong>' . htmlspecialchars($reason) . '</strong>', rawHtml: TRUE);
 
     // Mollie payment details.
     if ($paymentId !== NULL) {
-      $paymentUrl = "https://my.mollie.com/dashboard/payments/{$paymentId}";
-      $rows[] = $this->detailRow(E::ts('Payment ID'), "<a href=\"{$paymentUrl}\" target=\"_blank\">{$paymentId}</a>");
+      $safePaymentId = htmlspecialchars($paymentId);
+      $paymentUrl = "https://my.mollie.com/dashboard/payments/{$safePaymentId}";
+      $rows[] = $this->detailRow(E::ts('Payment ID'), "<a href=\"{$paymentUrl}\" target=\"_blank\">{$safePaymentId}</a>", rawHtml: TRUE);
     }
     $rows[] = $this->detailRow(E::ts('Status'), $status);
     if ($amount !== NULL && $currency !== NULL) {
@@ -1866,8 +1867,9 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     $rows[] = $this->detailRow(E::ts('Mode'), $mode);
 
     if ($customerId !== NULL) {
-      $customerUrl = "https://my.mollie.com/dashboard/customers/{$customerId}";
-      $rows[] = $this->detailRow(E::ts('Mollie Customer'), "<a href=\"{$customerUrl}\" target=\"_blank\">{$customerId}</a>");
+      $safeCustomerId = htmlspecialchars($customerId);
+      $customerUrl = "https://my.mollie.com/dashboard/customers/{$safeCustomerId}";
+      $rows[] = $this->detailRow(E::ts('Mollie Customer'), "<a href=\"{$customerUrl}\" target=\"_blank\">{$safeCustomerId}</a>", rawHtml: TRUE);
     }
     $rows[] = $this->detailRow(E::ts('Subscription ID'), $subscriptionId);
     $rows[] = $this->detailRow(E::ts('Created'), $createdAt);
@@ -1886,7 +1888,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       $rows[] = $this->detailRow(E::ts('Resolved Contact'), $contactId);
     }
     else {
-      $rows[] = $this->detailRow(E::ts('Resolved Contact'), '<em>' . E::ts('Could not identify contact') . '</em>');
+      $rows[] = $this->detailRow(E::ts('Resolved Contact'), '<em>' . E::ts('Could not identify contact') . '</em>', rawHtml: TRUE);
     }
 
     $rowsHtml = implode("\n", array_filter($rows));
@@ -1897,18 +1899,22 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   /**
    * Build a single HTML table row, skipping null values.
    *
+   * Values are HTML-escaped by default. Pass $rawHtml = TRUE only for
+   * values that contain intentional markup (e.g. links).
+   *
    * @param string $label
    * @param mixed $value
+   * @param bool $rawHtml
    *
    * @return string|null
    */
-  protected function detailRow(string $label, mixed $value): ?string {
+  protected function detailRow(string $label, mixed $value, bool $rawHtml = FALSE): ?string {
     if ($value === NULL) {
       return NULL;
     }
     $safeLabel = htmlspecialchars($label);
-    // Value may contain intentional HTML (links, emphasis).
-    return "<tr><td><strong>{$safeLabel}</strong></td><td>{$value}</td></tr>";
+    $safeValue = $rawHtml ? $value : htmlspecialchars((string) $value);
+    return "<tr><td><strong>{$safeLabel}</strong></td><td>{$safeValue}</td></tr>";
   }
 
   /**

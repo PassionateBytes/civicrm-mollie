@@ -5,7 +5,7 @@
     <tr>
       <td class="label">{$form.mollie_payment_description.label}</td>
       <td>{$form.mollie_payment_description.html}
-        <p class="description">{ts domain="nl.stichtinggast.mollie"}Template for the payment description shown on Mollie and bank statements. Use {literal}{contribution.id}{/literal} as placeholder.{/ts}</p>
+        <p class="description">{ts domain="nl.stichtinggast.mollie"}Template for the payment description shown on Mollie and bank statements. Use {literal}{contribution.id}{/literal} as placeholder. Mollie may truncate long descriptions or replace special characters depending on the payment method.{/ts}</p>
       </td>
     </tr>
   </table>

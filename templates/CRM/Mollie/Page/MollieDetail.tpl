@@ -98,7 +98,7 @@
           <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=$href"}" class="open-inline-noreturn"><i class="crm-i fa-arrow-circle-right"></i> {$label|escape}</a>
         {/foreach}
         {if $documentationUrl}
-          <a href="{$documentationUrl}" onclick="window.open(this.href); return false;"><i class="crm-i fa-book"></i> {ts domain="nl.stichtinggast.mollie"}API Docs{/ts}</a>
+          <a href="{$documentationUrl|escape}" onclick="window.open(this.href); return false;"><i class="crm-i fa-book"></i> {ts domain="nl.stichtinggast.mollie"}API Docs{/ts}</a>
         {/if}
       </div>
     </div>

@@ -24,7 +24,7 @@
           <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=$href"}" class="open-inline-noreturn"><i class="crm-i fa-arrow-circle-right"></i> {$label|escape}</a>
         {/foreach}
         {if $item.documentation_url}
-          <a href="{$item.documentation_url}" onclick="window.open(this.href); return false;"><i class="crm-i fa-book"></i> {ts domain="nl.stichtinggast.mollie"}API Docs{/ts}</a>
+          <a href="{$item.documentation_url|escape}" onclick="window.open(this.href); return false;"><i class="crm-i fa-book"></i> {ts domain="nl.stichtinggast.mollie"}API Docs{/ts}</a>
         {/if}
       </td>
     </tr>
