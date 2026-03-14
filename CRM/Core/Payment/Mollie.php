@@ -403,10 +403,25 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
 
     $this->logDebug("Webhook received for payment {$paymentId}", ['mollie_payment_id' => $paymentId]);
 
+    // Prevent concurrent processing of webhooks for the same payment ID.
+    // Without this, two near-simultaneous webhooks could both read the
+    // contribution as Pending and each create a Payment record, doubling
+    // the financial transaction. The lock makes them run sequentially.
+    $lock = \Civi::lockManager()->acquire("worker.mollie.{$paymentId}", 10);
+    if (!$lock->isAcquired()) {
+      $this->logWarning("Timed out waiting for lock on payment {$paymentId}, requesting retry", [
+        'mollie_payment_id' => $paymentId,
+      ]);
+      http_response_code(500);
+      return;
+    }
+
     try {
       $molliePayment = $this->getMollieApiClient()->payments->get($paymentId);
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
+      $lock->release();
+
       $this->logError("Failed to fetch Mollie payment {$paymentId} in webhook: {$e->getMessage()}", [
         'mollie_payment_id' => $paymentId,
         'error' => $e->getMessage(),
@@ -446,6 +461,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
 
     $this->routePaymentWebhook($molliePayment);
 
+    $lock->release();
     http_response_code(200);
   }
 
