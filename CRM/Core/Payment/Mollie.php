@@ -1647,17 +1647,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    *   Mollie-compatible locale string (e.g. 'nl_NL') or null.
    */
   protected function getMollieLocale(int $contactId): ?string {
-    // Mollie-supported locales for checkout page localization.
-    // Source: https://docs.mollie.com/reference/create-payment (locale parameter).
-    // The Mollie SDK does not provide a locale constant list; this is manually
-    // maintained. Update if Mollie adds new locales.
-    $mollieLocales = [
-      'en_US', 'en_GB', 'nl_NL', 'nl_BE', 'fr_FR', 'fr_BE',
-      'de_DE', 'de_AT', 'de_CH', 'es_ES', 'ca_ES', 'pt_PT',
-      'it_IT', 'nb_NO', 'sv_SE', 'fi_FI', 'da_DK', 'is_IS',
-      'hu_HU', 'pl_PL', 'lv_LV', 'lt_LT',
-    ];
-
+    // Mollie accepts any xx_XX locale and falls back to browser language for
+    // unsupported values. No need to maintain an allowlist — just pass through
+    // the contact's preferred language if set.
+    // See: https://docs.mollie.com/reference/create-payment (locale parameter).
     try {
       $contacts = \Civi\Api4\Contact::get(FALSE)
         ->addSelect('preferred_language')
@@ -1665,16 +1658,12 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         ->setLimit(1)
         ->execute();
 
-      $lang = $contacts->first()['preferred_language'] ?? NULL;
-      if ($lang !== NULL && in_array($lang, $mollieLocales, TRUE)) {
-        return $lang;
-      }
+      return $contacts->first()['preferred_language'] ?? NULL;
     }
     catch (\Exception $e) {
       // Non-critical — proceed without locale.
+      return NULL;
     }
-
-    return NULL;
   }
 
   // ---------------------------------------------------------------------------
