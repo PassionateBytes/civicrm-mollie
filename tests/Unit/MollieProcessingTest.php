@@ -397,12 +397,11 @@ class MollieProcessingTest extends TestCase {
     $mockClient->subscriptions = $mockSubEndpoint;
     $proc->stubbedMollieClient = $mockClient;
 
+    $mockSubEndpoint->expects($this->never())->method('cancelForId');
+
     $proc->exposedHandleFirstRecurringPaymentCompleted($contribution, $payment);
 
     $this->assertContains('createPaymentToken', $proc->calledMethods);
-
-    // Subscription created — verify the endpoint was called.
-    $mockSubEndpoint->expects($this->never())->method('cancelForId');
 
     // Recur updated to In Progress with subscription ID.
     $updateCalls = array_values($this->getApi4Calls('ContributionRecur', 'update'));
@@ -515,7 +514,13 @@ class MollieProcessingTest extends TestCase {
       'currency' => 'EUR', 'installments' => 6,
     ]]);
 
+    $existingSub = new Subscription($this->createMock(MollieApiClient::class));
+    $existingSub->times = 5;
+    $existingSub->timesRemaining = 3;
+
     $mockSubEndpoint = $this->createMock(SubscriptionEndpoint::class);
+    $mockSubEndpoint->method('getForId')
+      ->willReturn($existingSub);
     $mockSubEndpoint->expects($this->once())
       ->method('update')
       ->with('cst_test123', 'sub_abc', $this->callback(function ($data) {
@@ -582,7 +587,13 @@ class MollieProcessingTest extends TestCase {
       'currency' => 'EUR', 'installments' => NULL,
     ]]);
 
+    $existingSub = new Subscription($this->createMock(MollieApiClient::class));
+    $existingSub->times = NULL;
+    $existingSub->timesRemaining = NULL;
+
     $mockSubEndpoint = $this->createMock(SubscriptionEndpoint::class);
+    $mockSubEndpoint->method('getForId')
+      ->willReturn($existingSub);
     $mockSubEndpoint->expects($this->once())
       ->method('update')
       ->with('cst_test123', 'sub_abc', $this->callback(function ($data) {
