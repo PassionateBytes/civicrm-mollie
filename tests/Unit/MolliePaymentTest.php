@@ -177,6 +177,26 @@ class MolliePaymentTest extends TestCase {
     $this->assertSame($expected, $result);
   }
 
+  public function testStartDateTodayBumpedToTomorrow(): void {
+    $payment = new TestableMolliePayment();
+    $result = $payment->exposedComputeSubscriptionStartDate([
+      'next_sched_contribution_date' => date('Y-m-d') . ' 00:00:00',
+      'frequency_interval' => 1,
+      'frequency_unit' => 'month',
+    ]);
+    $this->assertSame(date('Y-m-d', strtotime('+1 day')), $result);
+  }
+
+  public function testStartDatePastBumpedToTomorrow(): void {
+    $payment = new TestableMolliePayment();
+    $result = $payment->exposedComputeSubscriptionStartDate([
+      'next_sched_contribution_date' => '2020-01-01 00:00:00',
+      'frequency_interval' => 1,
+      'frequency_unit' => 'month',
+    ]);
+    $this->assertSame(date('Y-m-d', strtotime('+1 day')), $result);
+  }
+
   // -----------------------------------------------------------------------
   // buildCancelReason
   // -----------------------------------------------------------------------

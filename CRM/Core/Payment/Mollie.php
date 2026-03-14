@@ -1558,13 +1558,17 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    */
   protected function computeSubscriptionStartDate(array $recur): string {
     if (!empty($recur['next_sched_contribution_date'])) {
-      return date('Y-m-d', strtotime($recur['next_sched_contribution_date']));
+      $date = date('Y-m-d', strtotime($recur['next_sched_contribution_date']));
+    }
+    else {
+      $interval = $recur['frequency_interval'] ?? 1;
+      $unit = $recur['frequency_unit'] ?? 'month';
+      $date = date('Y-m-d', strtotime("+{$interval} {$unit}"));
     }
 
-    $interval = $recur['frequency_interval'] ?? 1;
-    $unit = $recur['frequency_unit'] ?? 'month';
-
-    return date('Y-m-d', strtotime("+{$interval} {$unit}"));
+    // Mollie requires a future start date.
+    $tomorrow = date('Y-m-d', strtotime('+1 day'));
+    return $date >= $tomorrow ? $date : $tomorrow;
   }
 
   /**
