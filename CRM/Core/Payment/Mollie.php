@@ -894,7 +894,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'contribution_id' => $contribution['id'],
         'error' => $e->getMessage(),
       ]);
-      return;
+      throw $e;
     }
 
     $recorded = 0;
@@ -1035,7 +1035,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'contribution_id' => $contribution['id'],
         'error' => $e->getMessage(),
       ]);
-      return;
+      throw $e;
     }
 
     foreach ($refunds as $refund) {
