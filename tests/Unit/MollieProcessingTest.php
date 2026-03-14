@@ -53,6 +53,14 @@ class ProcessingTestableMollie extends \CRM_Core_Payment_Mollie {
     $this->handleFirstRecurringPaymentCompleted($contribution, $p);
   }
 
+  public function exposedCreateRecurringInstallment(array $contributionRecur, Payment $p): void {
+    $this->createRecurringInstallment($contributionRecur, $p);
+  }
+
+  public function exposedRecordFailedRecurringInstallment(array $contributionRecur, Payment $p): void {
+    $this->recordFailedRecurringInstallment($contributionRecur, $p);
+  }
+
   public function exposedCancelSubscription(&$message, $params): bool {
     return $this->cancelSubscription($message, $params);
   }
@@ -532,6 +540,187 @@ class MollieProcessingTest extends TestCase {
     $this->assertNull($call['values']['cancel_date']);
     $this->assertNull($call['values']['cancel_reason']);
     $this->assertNull($call['values']['end_date']);
+  }
+
+  // -----------------------------------------------------------------------
+  // createRecurringInstallment
+  // -----------------------------------------------------------------------
+
+  private function makeContributionRecur(int $id = 10): array {
+    return [
+      'id' => $id,
+      'payment_processor_id' => 1,
+      'contact_id' => 100,
+      'frequency_unit' => 'month',
+      'frequency_interval' => 1,
+      'next_sched_contribution_date' => '2026-04-01 00:00:00',
+      'amount' => '25.00',
+      'currency' => 'EUR',
+      'failure_count' => 0,
+    ];
+  }
+
+  public function testCreateRecurringInstallmentCallsRepeattransactionAndPaymentCreate(): void {
+    $proc = $this->makeProcessor();
+    $payment = $this->makePayment([
+      'id' => 'tr_recur1',
+      'amountValue' => '25.00',
+      'settlementValue' => '24.71',
+    ]);
+
+    // No existing contribution for this trxn_id.
+    Api4Mock::setResult('Contribution.get', []);
+    \Api3Mock::$result = ['is_error' => 0, 'id' => 42];
+
+    $proc->exposedCreateRecurringInstallment($this->makeContributionRecur(), $payment);
+
+    // repeattransaction should be called with correct params.
+    $repeatCalls = array_values($this->getApi3Calls('Contribution', 'repeattransaction'));
+    $this->assertCount(1, $repeatCalls);
+    $this->assertSame('Pending', $repeatCalls[0]['params']['contribution_status_id']);
+    $this->assertSame('tr_recur1', $repeatCalls[0]['params']['trxn_id']);
+    $this->assertEquals(25.00, $repeatCalls[0]['params']['total_amount']);
+    $this->assertSame(10, $repeatCalls[0]['params']['contribution_recur_id']);
+
+    // Payment.create should include fee.
+    $paymentCalls = array_values($this->getApi3Calls('Payment', 'create'));
+    $this->assertCount(1, $paymentCalls);
+    $this->assertSame(42, $paymentCalls[0]['params']['contribution_id']);
+    $this->assertSame('tr_recur1', $paymentCalls[0]['params']['trxn_id']);
+    $this->assertSame('0.29', $paymentCalls[0]['params']['fee_amount']);
+    $this->assertTrue($paymentCalls[0]['params']['is_send_contribution_notification']);
+
+    // next_sched_contribution_date should be advanced.
+    $recurUpdates = array_values($this->getApi4Calls('ContributionRecur', 'update'));
+    $nextDateUpdate = array_filter($recurUpdates, fn($c) => isset($c['values']['next_sched_contribution_date']));
+    $this->assertNotEmpty($nextDateUpdate);
+    $this->assertSame('2026-05-01 00:00:00', array_values($nextDateUpdate)[0]['values']['next_sched_contribution_date']);
+  }
+
+  public function testCreateRecurringInstallmentReusesPendingContribution(): void {
+    $proc = $this->makeProcessor();
+    $payment = $this->makePayment(['id' => 'tr_retry1']);
+
+    // Existing Pending contribution from a previous failed attempt.
+    Api4Mock::setResult('Contribution.get', [[
+      'id' => 77,
+      'contribution_status_id:name' => 'Pending',
+      'trxn_id' => 'tr_retry1',
+    ]]);
+
+    $proc->exposedCreateRecurringInstallment($this->makeContributionRecur(), $payment);
+
+    // repeattransaction should NOT be called — reuses existing.
+    $repeatCalls = $this->getApi3Calls('Contribution', 'repeattransaction');
+    $this->assertEmpty($repeatCalls);
+
+    // Payment.create should target the existing contribution.
+    $paymentCalls = array_values($this->getApi3Calls('Payment', 'create'));
+    $this->assertCount(1, $paymentCalls);
+    $this->assertSame(77, $paymentCalls[0]['params']['contribution_id']);
+  }
+
+  public function testCreateRecurringInstallmentSkipsWhenFinancialTrxnExists(): void {
+    $proc = $this->makeProcessor();
+    $proc->stubbedFinancialTrxnExists = TRUE;
+    $payment = $this->makePayment(['id' => 'tr_dupe1']);
+
+    Api4Mock::setResult('Contribution.get', []);
+    \Api3Mock::$result = ['is_error' => 0, 'id' => 50];
+
+    $proc->exposedCreateRecurringInstallment($this->makeContributionRecur(), $payment);
+
+    // repeattransaction is called (creates the contribution), but
+    // Payment.create should be skipped due to the guard.
+    $repeatCalls = $this->getApi3Calls('Contribution', 'repeattransaction');
+    $this->assertNotEmpty($repeatCalls);
+    $paymentCalls = $this->getApi3Calls('Payment', 'create');
+    $this->assertEmpty($paymentCalls);
+  }
+
+  public function testCreateRecurringInstallmentOmitsFeeWithoutSettlement(): void {
+    $proc = $this->makeProcessor();
+    $payment = $this->makePayment(['id' => 'tr_nofee']);
+
+    Api4Mock::setResult('Contribution.get', []);
+    \Api3Mock::$result = ['is_error' => 0, 'id' => 43];
+
+    $proc->exposedCreateRecurringInstallment($this->makeContributionRecur(), $payment);
+
+    $paymentCalls = array_values($this->getApi3Calls('Payment', 'create'));
+    $this->assertCount(1, $paymentCalls);
+    $this->assertArrayNotHasKey('fee_amount', $paymentCalls[0]['params']);
+  }
+
+  // -----------------------------------------------------------------------
+  // recordFailedRecurringInstallment
+  // -----------------------------------------------------------------------
+
+  public function testRecordFailedInstallmentCreatesContributionAndFails(): void {
+    $proc = $this->makeProcessor();
+    $payment = $this->makePayment(['id' => 'tr_fail1', 'status' => 'failed']);
+
+    // No existing contribution.
+    Api4Mock::setResult('Contribution.get', []);
+    \Api3Mock::$result = ['is_error' => 0, 'id' => 60];
+
+    $proc->exposedRecordFailedRecurringInstallment($this->makeContributionRecur(), $payment);
+
+    // repeattransaction should create a Pending contribution.
+    $repeatCalls = array_values($this->getApi3Calls('Contribution', 'repeattransaction'));
+    $this->assertCount(1, $repeatCalls);
+    $this->assertSame('Pending', $repeatCalls[0]['params']['contribution_status_id']);
+    $this->assertSame('tr_fail1', $repeatCalls[0]['params']['trxn_id']);
+
+    // Contribution should be marked as failed.
+    $contribUpdates = array_values($this->getApi4Calls('Contribution', 'update'));
+    $this->assertNotEmpty($contribUpdates);
+    $this->assertSame('Failed', $contribUpdates[0]['values']['contribution_status_id:name']);
+
+    // failure_count should be incremented.
+    $recurUpdates = array_values($this->getApi4Calls('ContributionRecur', 'update'));
+    $failureCountUpdate = array_filter($recurUpdates, fn($c) => isset($c['values']['failure_count']));
+    $this->assertNotEmpty($failureCountUpdate);
+    $this->assertSame(1, array_values($failureCountUpdate)[0]['values']['failure_count']);
+  }
+
+  public function testRecordFailedInstallmentReusesPendingContribution(): void {
+    $proc = $this->makeProcessor();
+    $payment = $this->makePayment(['id' => 'tr_fail2', 'status' => 'failed']);
+
+    // Existing Pending contribution from a previous attempt.
+    Api4Mock::setResult('Contribution.get', [[
+      'id' => 61,
+      'contribution_status_id:name' => 'Pending',
+      'trxn_id' => 'tr_fail2',
+    ]]);
+
+    $proc->exposedRecordFailedRecurringInstallment($this->makeContributionRecur(), $payment);
+
+    // repeattransaction should NOT be called.
+    $this->assertEmpty($this->getApi3Calls('Contribution', 'repeattransaction'));
+
+    // Existing contribution should still be marked as failed.
+    $contribUpdates = array_values($this->getApi4Calls('Contribution', 'update'));
+    $failedUpdate = array_filter($contribUpdates, fn($c) => ($c['values']['contribution_status_id:name'] ?? '') === 'Failed');
+    $this->assertNotEmpty($failedUpdate);
+  }
+
+  public function testRecordFailedInstallmentIncrementsFailureCount(): void {
+    $proc = $this->makeProcessor();
+    $payment = $this->makePayment(['id' => 'tr_fail3', 'status' => 'failed']);
+    $recur = $this->makeContributionRecur();
+    $recur['failure_count'] = 3;
+
+    Api4Mock::setResult('Contribution.get', []);
+    \Api3Mock::$result = ['is_error' => 0, 'id' => 62];
+
+    $proc->exposedRecordFailedRecurringInstallment($recur, $payment);
+
+    $recurUpdates = array_values($this->getApi4Calls('ContributionRecur', 'update'));
+    $failureCountUpdate = array_filter($recurUpdates, fn($c) => isset($c['values']['failure_count']));
+    $this->assertNotEmpty($failureCountUpdate);
+    $this->assertSame(4, array_values($failureCountUpdate)[0]['values']['failure_count']);
   }
 
   // -----------------------------------------------------------------------
