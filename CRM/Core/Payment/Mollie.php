@@ -414,8 +414,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     ignore_user_abort(TRUE);
 
     $paymentId = $_POST['id'] ?? NULL;
-    if (empty($paymentId)) {
-      $this->logWarning('Webhook received without payment ID');
+    if (empty($paymentId) || !str_starts_with($paymentId, 'tr_')) {
+      $this->logWarning('Webhook received with missing or invalid payment ID', [
+        'raw_id' => $paymentId,
+      ]);
       http_response_code(200);
       return;
     }
