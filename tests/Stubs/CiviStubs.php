@@ -149,7 +149,56 @@ namespace Tests\Stubs {
         (Api4Mock::$executeInterceptor)($key, $this->values, $this->wheres);
       }
       $data = Api4Mock::$results[$key] ?? [];
-      return new MockApi4Result(is_array($data) ? $data : []);
+      if (!is_array($data)) {
+        $data = [];
+      }
+      // For get actions, filter results by WHERE clauses against row data.
+      // Fields not present in a row (e.g., joined/chained fields) are ignored.
+      if ($this->action === 'get' && !empty($this->wheres) && !empty($data)) {
+        $data = array_values(array_filter($data, fn($row) => $this->rowMatchesWheres($row)));
+      }
+      return new MockApi4Result($data);
+    }
+
+    /**
+     * Check whether a result row satisfies all applicable WHERE clauses.
+     */
+    private function rowMatchesWheres(array $row): bool {
+      foreach ($this->wheres as [$field, $op, $value]) {
+        if (!array_key_exists($field, $row)) {
+          continue;
+        }
+        $rowValue = $row[$field];
+        $match = match ($op) {
+          '=' => $rowValue == $value,
+          '!=' => $rowValue != $value,
+          'IN' => is_array($value) && in_array($rowValue, $value, false),
+          'LIKE' => $this->matchLike($rowValue, $value),
+          '>=' => $rowValue >= $value,
+          '<=' => $rowValue <= $value,
+          '>' => $rowValue > $value,
+          '<' => $rowValue < $value,
+          default => true,
+        };
+        if (!$match) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    /**
+     * Match a value against a SQL LIKE pattern.
+     */
+    private function matchLike(mixed $value, string $pattern): bool {
+      // preg_quote escapes regex-special chars but leaves % and _ alone
+      // (they are not regex metacharacters), so we replace them after quoting.
+      $regex = '/^' . str_replace(
+        ['%', '_'],
+        ['.*', '.'],
+        preg_quote($pattern, '/')
+      ) . '$/s';
+      return (bool) preg_match($regex, (string) $value);
     }
   }
 

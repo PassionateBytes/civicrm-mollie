@@ -473,9 +473,7 @@ namespace Tests\Unit {
       $stats = $runner->callRun();
 
       $this->assertEquals(1, $stats['checked']);
-      // Api4Mock doesn't filter by status, so recoverSuspended also sees this
-      // record and hits the same API error — 2 errors total in test, 1 in prod.
-      $this->assertGreaterThanOrEqual(1, $stats['errors']);
+      $this->assertEquals(1, $stats['errors']);
       $this->assertEquals(0, $stats['synced']);
     }
 
@@ -533,9 +531,6 @@ namespace Tests\Unit {
       \Tests\Stubs\Api4Mock::reset();
       IntegrationTestableSyncRun::reset();
 
-      // syncFromMollie query returns empty (no active recurs).
-      \Tests\Stubs\Api4Mock::setResult('ContributionRecur.get', []);
-
       $failedRecur = [
         'id' => 30,
         'processor_id' => 'sub_suspended',
@@ -548,6 +543,11 @@ namespace Tests\Unit {
         'end_date' => NULL,
         'cancel_date' => NULL,
       ];
+
+      // The Failed status is filtered by WHERE clauses in the mock:
+      // syncFromMollie (IN ['In Progress', 'Pending']) → no match
+      // recoverSuspended (= 'Failed') → match
+      \Tests\Stubs\Api4Mock::setResult('ContributionRecur.get', [$failedRecur]);
 
       IntegrationTestableSyncRun::$customerMap = [300 => 'cst_suspended'];
 
@@ -566,12 +566,10 @@ namespace Tests\Unit {
       $mockClient->subscriptions = $mockSubEndpoint;
       IntegrationTestableSyncRun::$mockClient = $mockClient;
 
-      // Set result for recoverSuspended query.
-      \Tests\Stubs\Api4Mock::setResult('ContributionRecur.get', [$failedRecur]);
-
       $runner = new IntegrationTestableSyncRun();
       $stats = $runner->callRun();
 
+      $this->assertEquals(0, $stats['checked']);
       $this->assertEquals(1, $stats['suspensions_recovered']);
 
       $updates = array_values(array_filter(\Tests\Stubs\Api4Mock::$calls, fn($c) =>
@@ -635,13 +633,6 @@ namespace Tests\Unit {
       \Tests\Stubs\Api4Mock::reset();
       IntegrationTestableSyncRun::reset();
 
-      // syncFromMollie query returns empty (no active recurs).
-      \Tests\Stubs\Api4Mock::setResult('ContributionRecur.get', []);
-
-      // But we need retryCancellations to find cancelled recurs.
-      // The mock returns the same result for all ContributionRecur.get calls,
-      // so we set up a recur that is cancelled with a processor_id.
-      // We'll override the result after the first call.
       $cancelledRecur = [
         'id' => 20,
         'processor_id' => 'sub_cancel',
@@ -654,6 +645,12 @@ namespace Tests\Unit {
         'end_date' => NULL,
         'cancel_date' => '2026-03-10 00:00:00',
       ];
+
+      // The Cancelled status is filtered by WHERE clauses in the mock:
+      // syncFromMollie (IN ['In Progress', 'Pending']) → no match
+      // recoverSuspended (= 'Failed') → no match
+      // retryCancellations (= 'Cancelled') → match
+      \Tests\Stubs\Api4Mock::setResult('ContributionRecur.get', [$cancelledRecur]);
 
       IntegrationTestableSyncRun::$customerMap = [200 => 'cst_cancel'];
 
@@ -669,19 +666,12 @@ namespace Tests\Unit {
       $mockClient->subscriptions = $mockSubEndpoint;
       IntegrationTestableSyncRun::$mockClient = $mockClient;
 
-      // We need the second ContributionRecur.get (for retryCancellations) to
-      // return the cancelled recur. Since Api4Mock returns the same result
-      // for all calls to the same key, we set the cancelled recur and accept
-      // that syncFromMollie will also see it (but it won't match the
-      // "In Progress/Pending" status filter in production — in tests the
-      // mock doesn't filter). The sync loop will try to process it but the
-      // subscription status is 'active' → no CiviCRM status change needed.
-      \Tests\Stubs\Api4Mock::setResult('ContributionRecur.get', [$cancelledRecur]);
-
       $runner = new IntegrationTestableSyncRun();
       $stats = $runner->callRun();
 
       $this->assertEquals(1, $stats['cancellations_retried']);
+      // syncFromMollie should not have processed the Cancelled recur.
+      $this->assertEquals(0, $stats['checked']);
     }
   }
 }
