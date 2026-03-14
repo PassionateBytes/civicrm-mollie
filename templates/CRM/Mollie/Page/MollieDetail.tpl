@@ -15,12 +15,12 @@
     {if $pagination.previous || $pagination.next}
       <div class="mollie-detail-pagination">
         {if $pagination.previous}
-          <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=`$pagination.previous`"}" class="open-inline-noreturn button">
+          <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=`$pagination.previous|escape`"}" class="open-inline-noreturn button">
             <span><i class="crm-i fa-chevron-left"></i> {ts domain="nl.stichtinggast.mollie"}Previous{/ts}</span>
           </a>
         {/if}
         {if $pagination.next}
-          <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=`$pagination.next`"}" class="open-inline-noreturn button">
+          <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=`$pagination.next|escape`"}" class="open-inline-noreturn button">
             <span><i class="crm-i fa-chevron-right"></i> {ts domain="nl.stichtinggast.mollie"}Next{/ts}</span>
           </a>
         {/if}
@@ -95,7 +95,7 @@
       {/if}
       <div class="mollie-related-links">
         {foreach from=$relatedLinks key=label item=href}
-          <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=$href"}" class="open-inline-noreturn"><i class="crm-i fa-arrow-circle-right"></i> {$label|escape}</a>
+          <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=`$href|escape`"}" class="open-inline-noreturn"><i class="crm-i fa-arrow-circle-right"></i> {$label|escape}</a>
         {/foreach}
         {if $documentationUrl}
           <a href="{$documentationUrl|escape}" onclick="window.open(this.href); return false;"><i class="crm-i fa-book"></i> {ts domain="nl.stichtinggast.mollie"}API Docs{/ts}</a>
