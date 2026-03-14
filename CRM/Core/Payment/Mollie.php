@@ -1089,6 +1089,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   protected function handleFirstRecurringPaymentCompleted(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
     $recurId = $contribution['contribution_recur_id'];
     $customerId = $molliePayment->customerId;
+    $subscriptionId = NULL;
 
     try {
       // The payment object carries the mandateId that Mollie created from
@@ -1158,6 +1159,26 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
         'contribution_recur_id' => $recurId,
         'error' => $e->getMessage(),
       ]);
+
+      // Clean up: if a subscription was already created on Mollie before
+      // the failure, cancel it to avoid orphaned charges.
+      if ($subscriptionId !== NULL) {
+        try {
+          $this->getMollieApiClient()->subscriptions->cancelForId($customerId, $subscriptionId);
+          $this->logInfo("Cancelled orphaned subscription {$subscriptionId} during failed setup of ContributionRecur #{$recurId}", [
+            'subscription_id' => $subscriptionId,
+            'contribution_recur_id' => $recurId,
+          ]);
+        }
+        catch (\Exception $cancelException) {
+          $this->logError("Failed to cancel orphaned subscription {$subscriptionId} for ContributionRecur #{$recurId}: {$cancelException->getMessage()}", [
+            'subscription_id' => $subscriptionId,
+            'contribution_recur_id' => $recurId,
+            'error' => $cancelException->getMessage(),
+          ]);
+        }
+      }
+
       $this->failContributionRecur($recurId, $molliePayment);
     }
   }
