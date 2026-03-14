@@ -1,9 +1,9 @@
 <?php return array(
     'root' => array(
         'name' => 'stichtinggast/civicrm-mollie',
-        'pretty_version' => 'dev-main',
-        'version' => 'dev-main',
-        'reference' => 'd18bda0125ca752ca3bb50877706f07fc445c02c',
+        'pretty_version' => '1.0.0+no-version-set',
+        'version' => '1.0.0.0',
+        'reference' => null,
         'type' => 'library',
         'install_path' => __DIR__ . '/../../',
         'aliases' => array(),
@@ -29,9 +29,9 @@
             'dev_requirement' => false,
         ),
         'stichtinggast/civicrm-mollie' => array(
-            'pretty_version' => 'dev-main',
-            'version' => 'dev-main',
-            'reference' => 'd18bda0125ca752ca3bb50877706f07fc445c02c',
+            'pretty_version' => '1.0.0+no-version-set',
+            'version' => '1.0.0.0',
+            'reference' => null,
             'type' => 'library',
             'install_path' => __DIR__ . '/../../',
             'aliases' => array(),

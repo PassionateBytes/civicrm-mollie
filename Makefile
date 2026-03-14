@@ -1,9 +1,16 @@
-.PHONY: all install test clean
+.PHONY: default install install-dev test clean
 
-all: install test clean
+default: install-dev test clean
 	@printf "\nDone.\n"
 
 install:
+	@printf "\nInstalling production dependencies...\n"
+	docker run --rm \
+		-v $(CURDIR):/app \
+		-w /app \
+		composer:2 install --no-dev --ignore-platform-reqs --quiet
+
+install-dev:
 	@printf "\nInstalling development dependencies...\n"
 	docker run --rm \
 		-v $(CURDIR):/app \
@@ -21,3 +28,4 @@ clean:
 	@printf "\nCleaning bundled dependency directory...\n"
 	git checkout -- vendor/
 	git clean -fd vendor/
+
