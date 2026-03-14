@@ -140,6 +140,12 @@ class Get extends AbstractAction {
   /**
    * Fetch a resource from a Mollie API path, trying live then test key.
    *
+   * Only GET requests are issued (read-only). Authentication uses Mollie
+   * API keys, which are scoped to payment-profile-level resources (payments,
+   * customers, subscriptions, mandates, refunds). Organization-level
+   * endpoints (settlements, balances, invoices, organizations) require
+   * OAuth access tokens and will be rejected server-side by Mollie (401/403).
+   *
    * @param string $apiPath
    *
    * @return \stdClass
@@ -198,6 +204,10 @@ class Get extends AbstractAction {
   protected static function extractLinks(\stdClass $resource): array {
     $links = ['related' => [], 'documentation' => ''];
     $rawLinks = get_object_vars($resource->_links ?? new \stdClass());
+    // Skip navigation/UI links (self, dashboard, previous, next) and
+    // organization-level links (settlement(s), balance(s), invoice(s),
+    // profile) — the latter require OAuth tokens and would fail with
+    // 401/403 when fetched with an API key.
     $skip = ['self', 'dashboard', 'previous', 'next', 'profile', 'settlement', 'settlements', 'balance', 'balances', 'invoice', 'invoices'];
 
     foreach ($rawLinks as $key => $link) {

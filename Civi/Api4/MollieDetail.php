@@ -10,6 +10,13 @@ use CRM_Mollie_ExtensionUtil as E;
  * Provides a read-only lookup for payments, subscriptions, and customers
  * by their Mollie ID prefix (tr_, sub_, cst_).
  *
+ * Security: this endpoint uses Mollie API keys (not OAuth access tokens),
+ * which limits access to payment-profile-level resources (payments,
+ * customers, subscriptions, mandates, refunds). Organization-level
+ * resources (settlements, balances, invoices, organizations) require OAuth
+ * tokens and are rejected server-side by Mollie with 401/403. The proxy
+ * is read-only (GET only), so no mutations are possible.
+ *
  * @searchable none
  * @package Civi\Api4
  */

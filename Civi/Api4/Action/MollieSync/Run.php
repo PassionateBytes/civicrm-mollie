@@ -156,7 +156,7 @@ class Run extends AbstractAction {
         $updates['end_date'] = $updates['cancel_date'];
         $updates['next_sched_contribution_date'] = NULL;
       }
-      if ($newStatus === 'Failed' || $newStatus === 'Pending') {
+      if ($newStatus === 'Failed') {
         $updates['next_sched_contribution_date'] = NULL;
       }
     }
@@ -326,6 +326,9 @@ class Run extends AbstractAction {
       'completed' => 'Completed',
       'canceled' => 'Cancelled',
       'suspended' => 'Failed',
+      // 'pending' means Mollie hasn't attempted the first subscription charge yet.
+      // By the time we create the subscription, the initial payment already succeeded
+      // and CiviCRM recur is already 'In Progress' — no status change needed.
       'pending' => NULL,
       default => NULL,
     };
