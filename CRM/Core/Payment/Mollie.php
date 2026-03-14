@@ -1405,11 +1405,17 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ->first();
 
     try {
-      $mollieCustomer = $this->getMollieApiClient()->customers->create([
-        'name' => $contact['display_name'] ?? '',
-        'email' => $contact['email_primary.email'] ?? '',
+      $customerParams = [
         'metadata' => ['civicrm' => ['contact_id' => $contactId]],
-      ]);
+      ];
+      if (!empty($contact['display_name'])) {
+        $customerParams['name'] = $contact['display_name'];
+      }
+      if (!empty($contact['email_primary.email'])) {
+        $customerParams['email'] = $contact['email_primary.email'];
+      }
+
+      $mollieCustomer = $this->getMollieApiClient()->customers->create($customerParams);
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
       $this->logError("Failed to create Mollie customer for Contact #{$contactId}: {$e->getMessage()}", [
