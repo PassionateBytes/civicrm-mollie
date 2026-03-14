@@ -190,10 +190,14 @@ class Run extends AbstractAction {
    * @param array $stats
    */
   protected function retryCancellations(array &$stats): void {
+    // Only check recently cancelled subscriptions to avoid scanning the full
+    // history on every run. 7 days is generous enough to survive a few days of
+    // cron downtime while keeping the query bounded as cancellations accumulate.
     $cancelledRecurs = ContributionRecur::get(FALSE)
       ->addSelect('id', 'processor_id', 'contact_id', 'payment_processor_id')
       ->addWhere('processor_id', 'LIKE', 'sub_%')
       ->addWhere('contribution_status_id:name', '=', 'Cancelled')
+      ->addWhere('cancel_date', '>=', date('Y-m-d', strtotime('-7 days')))
       ->addWhere('is_test', 'IN', [0, 1])
       ->addJoin('PaymentProcessorType AS ppt', 'INNER',
         ['payment_processor_id.payment_processor_type_id', '=', 'ppt.id'],
