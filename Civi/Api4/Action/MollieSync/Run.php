@@ -285,13 +285,20 @@ class Run extends AbstractAction {
    *
    * @return \Mollie\Api\MollieApiClient
    */
+  protected static array $clientCache = [];
+
   protected static function getClientForProcessor(int $processorId): \Mollie\Api\MollieApiClient {
+    if (isset(self::$clientCache[$processorId])) {
+      return self::$clientCache[$processorId];
+    }
+
     $processor = System::singleton()->getById($processorId);
     $processorConfig = $processor->getPaymentProcessor();
     $apiKey = $processorConfig['user_name'] ?? '';
 
     $client = new \Mollie\Api\MollieApiClient();
     $client->setApiKey($apiKey);
+    self::$clientCache[$processorId] = $client;
 
     return $client;
   }
