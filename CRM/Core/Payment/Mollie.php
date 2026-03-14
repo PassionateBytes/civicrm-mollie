@@ -1342,6 +1342,12 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   /**
    * Create a CiviCRM contribution for a successful recurring installment.
    *
+   * Uses repeattransaction to clone the template contribution, then
+   * Payment.create to record the payment for proper financial bookkeeping.
+   * Includes a financialTrxnExists() guard (matching completeContribution)
+   * to prevent duplicate FinancialTrxn records if concurrent webhooks
+   * bypass the lock.
+   *
    * @param array $contributionRecur
    * @param \Mollie\Api\Resources\Payment $molliePayment
    */
@@ -1386,6 +1392,18 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ]);
 
       $contributionId = $result['id'];
+    }
+
+    // Defense-in-depth: Payment.create has no unique constraint on trxn_id,
+    // so duplicate calls would create duplicate FinancialTrxn records.
+    // The caller checks contribution status, but a race between concurrent
+    // webhooks could bypass that. This guards at the financial transaction level.
+    if ($this->financialTrxnExists($molliePayment->id)) {
+      $this->logDebug("FinancialTrxn for {$molliePayment->id} already exists, skipping recurring installment (ContributionRecur #{$contributionRecur['id']})", [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_recur_id' => $contributionRecur['id'],
+      ]);
+      return;
     }
 
     $paymentParams = [
