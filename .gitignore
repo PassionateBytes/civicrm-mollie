@@ -4,6 +4,8 @@ composer.lock
 *.swp
 *.swo
 *~
+CLAUDE.md
+.*.md
 
 # Ignore all of vendor/ except bundled production dependencies
 vendor/*
