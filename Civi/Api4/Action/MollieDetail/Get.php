@@ -152,7 +152,7 @@ class Get extends AbstractAction {
    */
   protected function fetchResource(string $apiPath): \stdClass {
     $resource = NULL;
-    $firstError = NULL;
+    $errors = [];
     foreach ([FALSE, TRUE] as $testMode) {
       try {
         $client = self::getClientForMode($testMode);
@@ -166,12 +166,12 @@ class Get extends AbstractAction {
         break;
       }
       catch (ApiException|\CRM_Core_Exception $e) {
-        $firstError ??= $e;
+        $errors[] = ($testMode ? 'test' : 'live') . ': ' . $e->getMessage();
       }
     }
 
     if ($resource === NULL) {
-      throw new \CRM_Core_Exception(E::ts('Mollie API error: %1', [1 => $firstError->getMessage()]));
+      throw new \CRM_Core_Exception(E::ts('Mollie API error: %1', [1 => implode('; ', $errors)]));
     }
 
     return $resource;
