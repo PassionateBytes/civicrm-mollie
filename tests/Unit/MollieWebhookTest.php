@@ -372,9 +372,10 @@ class MollieWebhookTest extends TestCase {
     $this->assertSame(['recordFailedRecurringInstallment'], $processor->calledMethods);
   }
 
-  public function testRecurringIdempotencySkipsDuplicate(): void {
+  public function testRecurringIdempotencySkipsCompletedDuplicate(): void {
     $processor = new WebhookTestableMolliePayment();
     $existing = $this->makePendingContribution();
+    $existing['contribution_status_id:name'] = 'Completed';
 
     $payment = $this->makePayment([
       'status' => 'paid',
@@ -383,6 +384,34 @@ class MollieWebhookTest extends TestCase {
     $processor->exposedProcessRecurringPaymentWebhook($payment, $existing);
 
     $this->assertSame([], $processor->calledMethods);
+  }
+
+  public function testRecurringIdempotencySkipsFailedDuplicate(): void {
+    $processor = new WebhookTestableMolliePayment();
+    $existing = $this->makePendingContribution();
+    $existing['contribution_status_id:name'] = 'Failed';
+
+    $payment = $this->makePayment([
+      'status' => 'failed',
+      'subscriptionId' => 'sub_test',
+    ]);
+    $processor->exposedProcessRecurringPaymentWebhook($payment, $existing);
+
+    $this->assertSame([], $processor->calledMethods);
+  }
+
+  public function testRecurringPendingContributionAllowsRetry(): void {
+    $processor = new WebhookTestableMolliePayment();
+    $processor->stubbedContributionRecur = ['id' => 10, 'payment_processor_id' => 1];
+    $existing = $this->makePendingContribution();
+
+    $payment = $this->makePayment([
+      'status' => 'paid',
+      'subscriptionId' => 'sub_test',
+    ]);
+    $processor->exposedProcessRecurringPaymentWebhook($payment, $existing);
+
+    $this->assertSame(['createRecurringInstallment'], $processor->calledMethods);
   }
 
   public function testRecurringUnknownSubscriptionSkips(): void {
