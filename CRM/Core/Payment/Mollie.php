@@ -82,34 +82,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     return TRUE;
   }
 
-  /**
-   * Fields that can be edited on a recurring contribution.
-   *
-   * @return array
-   */
-  public function getEditableRecurringScheduleFields(): array {
-    return ['amount'];
-  }
-
-  /**
-   * No on-site payment form fields — Mollie handles payment collection.
-   *
-   * @return array
-   */
-  public function getPaymentFormFields(): array {
-    return [];
-  }
-
-  /**
-   * No billing address fields needed — address is collected on Mollie side.
-   *
-   * @param int $bltID
-   * @return array
-   */
-  public function getBillingAddressFields($bltID = NULL): array {
-    return [];
-  }
-
   // ---------------------------------------------------------------------------
   // Recurring lifecycle: cancel & amount change
   // ---------------------------------------------------------------------------
@@ -203,14 +175,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       ->execute()
       ->first();
 
-    // Mollie does not support changing the number of installments on an
-    // existing subscription. Block the update if installments changed.
-    $newInstallments = isset($params['installments']) ? (int) $params['installments'] : NULL;
-    $oldInstallments = isset($recur['installments']) ? (int) $recur['installments'] : NULL;
-    if ($newInstallments !== $oldInstallments) {
-      throw new PaymentProcessorException(E::ts('The number of installments cannot be changed on a Mollie subscription. Cancel this subscription and create a new one instead.'));
-    }
-
     if (empty($recur['processor_id'])) {
       throw new PaymentProcessorException(E::ts('No Mollie subscription ID found for this recurring contribution.'));
     }
@@ -220,21 +184,48 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       throw new PaymentProcessorException(E::ts('No Mollie customer found for this contact.'));
     }
 
-    try {
-      $this->getMollieApiClient()->subscriptions->update($mollieCustomer, $recur['processor_id'], [
-        'amount' => [
-          'currency' => $recur['currency'],
-          'value' => number_format((float) $newAmount, 2, '.', ''),
-        ],
-      ]);
+    $updateData = [
+      'amount' => [
+        'currency' => $recur['currency'],
+        'value' => number_format((float) $newAmount, 2, '.', ''),
+      ],
+    ];
 
-      $this->logInfo("Mollie subscription {$recur['processor_id']} amount updated to {$newAmount} (ContributionRecur #{$recurId})", [
+    // Sync installment count to Mollie's `times` parameter if changed.
+    // Mollie `times` is the total number of subscription payments (excluding
+    // the initial first payment which created the mandate).
+    $newInstallments = isset($params['installments']) ? (int) $params['installments'] : NULL;
+    $oldInstallments = isset($recur['installments']) ? (int) $recur['installments'] : NULL;
+    $installmentsChanged = $newInstallments !== $oldInstallments;
+    if ($installmentsChanged) {
+      $wasFinite = $oldInstallments !== NULL && $oldInstallments > 0;
+      $becomesOpenEnded = $newInstallments === NULL || $newInstallments <= 0;
+      if ($wasFinite && $becomesOpenEnded) {
+        // Mollie's PATCH endpoint silently ignores null and rejects 0 for
+        // `times`, so a finite subscription cannot be made open-ended.
+        throw new PaymentProcessorException(E::ts('A subscription with a fixed number of installments cannot be changed to open-ended on Mollie.'));
+      }
+      if ($newInstallments !== NULL && $newInstallments <= 1) {
+        throw new PaymentProcessorException(E::ts('Installments must be at least 2 for a subscription.'));
+      }
+      $updateData['times'] = $newInstallments - 1;
+    }
+
+    try {
+      $this->getMollieApiClient()->subscriptions->update($mollieCustomer, $recur['processor_id'], $updateData);
+
+      $changes = ["amount={$newAmount}"];
+      if ($installmentsChanged) {
+        $changes[] = "installments={$newInstallments}";
+      }
+      $this->logInfo("Mollie subscription {$recur['processor_id']} updated: " . implode(', ', $changes) . " (ContributionRecur #{$recurId})", [
         'subscription_id' => $recur['processor_id'],
         'contribution_recur_id' => $recurId,
         'new_amount' => $newAmount,
+        'new_installments' => $newInstallments,
       ]);
 
-      $message = E::ts('Subscription amount updated on Mollie.');
+      $message = E::ts('Subscription updated on Mollie.');
       return TRUE;
     }
     catch (\Mollie\Api\Exceptions\ApiException $e) {
@@ -288,6 +279,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     $propertyBag = PropertyBag::cast($params);
     $this->_component = $component;
 
+    // Zero-amount payments complete immediately without contacting Mollie.
+    // This means recurring series must start with a real charge — the first
+    // payment creates the mandate via Mollie checkout. A zero-amount "authorize
+    // now, charge later" flow is currently not supported by this extension.
     if ($propertyBag->getAmount() == 0) {
       return $this->setStatusPaymentCompleted([]);
     }
@@ -449,9 +444,23 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       return;
     }
 
+    $this->routePaymentWebhook($molliePayment);
+
+    http_response_code(200);
+  }
+
+  /**
+   * Route a fetched Mollie payment to the appropriate handler.
+   *
+   * Separated from handlePaymentNotification() so the pure routing logic
+   * can be tested without HTTP globals or Mollie API calls.
+   *
+   * @param \Mollie\Api\Resources\Payment $molliePayment
+   */
+  protected function routePaymentWebhook(\Mollie\Api\Resources\Payment $molliePayment): void {
     $subscriptionId = $molliePayment->subscriptionId ?? NULL;
-    $this->logDebug("Mollie payment {$paymentId} fetched: status={$molliePayment->status}" . ($subscriptionId ? " subscription={$subscriptionId}" : ''), [
-      'mollie_payment_id' => $paymentId,
+    $this->logDebug("Mollie payment {$molliePayment->id} fetched: status={$molliePayment->status}" . ($subscriptionId ? " subscription={$subscriptionId}" : ''), [
+      'mollie_payment_id' => $molliePayment->id,
       'status' => $molliePayment->status,
       'subscription_id' => $subscriptionId,
     ]);
@@ -462,16 +471,23 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     // orthogonal to whether the payment is one-off or recurring, so we
     // handle them here before routing. Must be checked before idempotency
     // skips in the per-type handlers.
+    //
+    // A payment can have both refunds and chargebacks simultaneously (e.g.,
+    // partial refund issued, then customer disputes the rest). Process
+    // refunds first so CiviCRM sets Refunded/Partially paid, then
+    // chargebacks which explicitly override to Chargeback status.
     $existingContribution = $this->findContributionByTrxnId($molliePayment->id);
     if ($existingContribution !== NULL && $molliePayment->isPaid()) {
-      if ($molliePayment->hasChargebacks()) {
-        $this->handleChargeback($existingContribution, $molliePayment);
-        http_response_code(200);
-        return;
-      }
+      $hasPostPaymentEvent = FALSE;
       if ($molliePayment->hasRefunds()) {
         $this->handleRefund($existingContribution, $molliePayment);
-        http_response_code(200);
+        $hasPostPaymentEvent = TRUE;
+      }
+      if ($molliePayment->hasChargebacks()) {
+        $this->handleChargeback($existingContribution, $molliePayment);
+        $hasPostPaymentEvent = TRUE;
+      }
+      if ($hasPostPaymentEvent) {
         return;
       }
     }
@@ -482,8 +498,6 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     else {
       $this->processOneOffOrFirstPaymentWebhook($molliePayment, $existingContribution);
     }
-
-    http_response_code(200);
   }
 
   /**
@@ -606,13 +620,24 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * @param \Mollie\Api\Resources\Payment $molliePayment
    */
   protected function completeContribution(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
+    // Defense-in-depth: Payment.create has no unique constraint on trxn_id,
+    // so duplicate calls would create duplicate FinancialTrxn records.
+    // The caller checks contribution status, but a race between concurrent
+    // webhooks could bypass that. This guards at the financial transaction level.
+    if ($this->financialTrxnExists($molliePayment->id)) {
+      $this->logDebug("FinancialTrxn for {$molliePayment->id} already exists, skipping (Contribution #{$contribution['id']})", [
+        'mollie_payment_id' => $molliePayment->id,
+        'contribution_id' => $contribution['id'],
+      ]);
+      return;
+    }
+
     $params = [
       'contribution_id' => $contribution['id'],
       'total_amount' => $molliePayment->amount->value,
       'trxn_id' => $molliePayment->id,
       'trxn_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
       'payment_processor_id' => $this->_paymentProcessor['id'],
-      'is_send_contribution_notification' => $contribution['is_email_receipt'] ?? FALSE,
     ];
 
     // Mollie does not provide an explicit fee field. Fees are derived from
@@ -930,8 +955,11 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     }
 
     foreach ($refunds as $refund) {
-      // Only record refunds that have actually moved money.
-      if (!in_array($refund->status, ['processing', 'refunded'], TRUE)) {
+      // Only record refunds that have fully completed. Mollie sends
+      // separate webhooks for processing → refunded/failed, so waiting
+      // for the terminal 'refunded' status avoids recording refunds that
+      // may later fail (e.g. consumer's bank account was closed).
+      if ($refund->status !== 'refunded') {
         continue;
       }
 

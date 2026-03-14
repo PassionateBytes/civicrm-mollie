@@ -166,24 +166,24 @@ namespace Tests\Unit {
       $this->assertNull($updates['next_sched_contribution_date']);
     }
 
-    public function testBuildUpdatesStatusPaused(): void {
+    public function testBuildUpdatesStatusActiveRecoversSuspended(): void {
       $sub = $this->makeSubscription([
-        'status' => 'paused',
-        'nextPaymentDate' => NULL,
+        'status' => 'active',
+        'nextPaymentDate' => '2026-04-15',
         'amount' => $this->makeAmount('25.00'),
         'canceledAt' => NULL,
       ]);
       $recur = [
-        'contribution_status_id:name' => 'In Progress',
-        'next_sched_contribution_date' => '2026-04-01 00:00:00',
+        'contribution_status_id:name' => 'Failed',
+        'next_sched_contribution_date' => NULL,
         'amount' => '25.00',
       ];
 
       $run = new TestableMollieSyncRun();
       $updates = $run->exposedBuildUpdatesFromSubscription($sub, $recur);
 
-      $this->assertSame('Pending', $updates['contribution_status_id:name']);
-      $this->assertNull($updates['next_sched_contribution_date']);
+      $this->assertSame('In Progress', $updates['contribution_status_id:name']);
+      $this->assertSame('2026-04-15 00:00:00', $updates['next_sched_contribution_date']);
     }
 
     public function testBuildUpdatesNextDateChanged(): void {

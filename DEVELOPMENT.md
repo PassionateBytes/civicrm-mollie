@@ -10,7 +10,7 @@ Developer documentation for the Mollie Payment Processor CiviCRM extension (`nl.
 - **Mollie-managed recurring** — Mollie's Subscriptions API handles scheduling and charging. CiviCRM does not trigger recurring payments; Mollie does, and notifies CiviCRM via webhooks.
 - **Mollie as source of truth** — for all subscription-managed fields (status, next charge date, amount). The sync job reconciles CiviCRM state from Mollie, not the other way around.
 - **Webhook-driven status updates** — contribution status is always determined by fetching the full payment from Mollie's API after receiving a webhook. The redirect return URL is never used to determine payment outcome.
-- **Idempotent webhook handling** — the handler checks `trxn_id` existence before creating contributions, making it safe to receive duplicate webhook calls.
+- **Idempotent webhook handling** — multiple layers of protection against duplicate processing: contribution status checks, `FinancialTrxn.trxn_id` existence checks in `completeContribution()`, `handleChargeback()`, and `handleRefund()`, and `Contribution.trxn_id` existence checks for recurring installments.
 - **Minimal custom schema** — one custom entity (`MollieCustomer`) maps contacts to Mollie customer IDs. All other Mollie references use standard CiviCRM fields:
   - `ContributionRecur.processor_id` — Mollie subscription ID
   - `PaymentToken` — Mollie mandate ID
@@ -27,7 +27,7 @@ Developer documentation for the Mollie Payment Processor CiviCRM extension (`nl.
 **Initiation** (`doPayment()`, non-recurring):
 
 1. CiviCRM creates a pending Contribution and calls `doPayment()`
-2. Zero-amount check — if amount is 0, mark Completed immediately (no Mollie interaction)
+2. Zero-amount check — if amount is 0, mark Completed immediately (no Mollie interaction; see [Zero-Amount Payments and Recurring](#zero-amount-payments-and-recurring))
 3. Build Mollie payment params (amount, currency, description, webhookUrl, redirectUrl, locale)
 4. `POST /v2/payments` — create Mollie payment
 5. Store Mollie payment ID in `Contribution.trxn_id`
@@ -40,7 +40,7 @@ Developer documentation for the Mollie Payment Processor CiviCRM extension (`nl.
 9. Look up Contribution by `trxn_id`
 10. Check for chargebacks first (see below)
 11. Idempotency check — skip if Contribution is already Completed
-12. **If paid**: call `Payment.create` (APIv3) to record the payment and transition the contribution to Completed, recording fee amount from settlement data
+12. **If paid**: `completeContribution()` checks for existing `FinancialTrxn` by Mollie payment ID (defense-in-depth against concurrent webhooks), then calls `Payment.create` (APIv3) to record the payment and transition the contribution to Completed, recording fee amount from settlement data
 13. **If failed/cancelled/expired**: mark Contribution as Failed or Cancelled
 
 #### Recurring Payment — First Payment
@@ -143,7 +143,8 @@ The template also supports Smarty syntax for conditional logic. The default temp
 
 - Translation: user-facing strings wrapped in `E::ts()`
 - Logging: `\Civi::log('mollie')` with PSR-3 levels
-- Mixins: `entity-types-php@2.0`, `mgd-php@1.0`, `setting-php@1.0`, `menu-xml@1.0`, `scan-classes@1.0`, `smarty-v2@1.0`
+- Mixins: `entity-types-php@2.0`, `mgd-php@2.0`, `setting-php@1.0`, `menu-xml@1.0`, `scan-classes@1.0`, `smarty@1.0`
+- Schema management: `CiviMix\Schema\Mollie\AutomaticUpgrader` handles table creation/deletion from `schema/*.entityType.php` files. The custom `CRM_Mollie_Upgrader` class is reserved for `upgrade_NNNN()` migration steps only.
 
 ### Mollie API Quick Reference
 
@@ -193,4 +194,17 @@ make            # Run all three in sequence
 - Never log full API keys — only the last 4 characters
 - All Mollie API calls must be wrapped in try/catch for `\Mollie\Api\Exceptions\ApiException`
 - Zero-amount contributions are handled without Mollie interaction
+
+### Zero-Amount Payments and Recurring
+
+Zero-amount payments (`amount == 0`) short-circuit in `doPayment()` and complete immediately without contacting Mollie. This applies to both one-off and recurring payments.
+
+For recurring series, this means the extension assumes the first payment always carries a real charge. The first payment's Mollie checkout creates the mandate (payment authorization), and the subscription is created afterward with `times = installments - 1` (subtracting the first payment).
+
+Regarding a potential "authorize now, charge later" flow (where a €0.00 first payment creates a mandate without charging, followed by a subscription at a different amount):  
+This is currently **not supported**. Implementing this would require:
+
+1. Bypassing the zero-amount short-circuit for recurring payments (so Mollie checkout still runs)
+2. Revisiting the `times = installments - 1` logic (since the €0.00 payment wouldn't count as a real installment)
+3. Handling the case where `installments` on the subscription equals the full count rather than count minus one
 

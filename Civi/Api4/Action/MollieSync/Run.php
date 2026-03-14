@@ -246,11 +246,11 @@ class Run extends AbstractAction {
    */
   protected static function mapMollieStatusToCiviCrm(string $mollieStatus): ?string {
     return match ($mollieStatus) {
+      'active' => 'In Progress',
       'completed' => 'Completed',
       'canceled' => 'Cancelled',
       'suspended' => 'Failed',
-      'paused' => 'Pending',
-      'active', 'pending' => NULL,
+      'pending' => NULL,
       default => NULL,
     };
   }
