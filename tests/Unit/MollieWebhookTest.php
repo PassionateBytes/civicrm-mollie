@@ -5,6 +5,7 @@ namespace Tests\Unit;
 use Mollie\Api\MollieApiClient;
 use Mollie\Api\Resources\Payment;
 use PHPUnit\Framework\TestCase;
+use Tests\Stubs\Api4Mock;
 
 /**
  * Test subclass that stubs CiviCRM-dependent methods to track webhook routing.
@@ -126,6 +127,10 @@ class NotificationTestableMollie extends \CRM_Core_Payment_Mollie {
 }
 
 class MollieWebhookTest extends TestCase {
+
+  protected function setUp(): void {
+    Api4Mock::reset();
+  }
 
   private function makePayment(array $props): Payment {
     $client = $this->createMock(MollieApiClient::class);
@@ -328,6 +333,72 @@ class MollieWebhookTest extends TestCase {
     $contribution['contribution_status_id:name'] = 'Completed';
 
     $payment = $this->makePayment(['status' => 'paid']);
+    $processor->exposedProcessOneOffOrFirstPaymentWebhook($payment, $contribution);
+
+    $this->assertSame([], $processor->calledMethods);
+  }
+
+  public function testFirstRecurringRetryWhenSubscriptionSetupIncomplete(): void {
+    $processor = new WebhookTestableMolliePayment();
+    $contribution = $this->makePendingContribution(1, recurId: 10);
+    $contribution['contribution_status_id:name'] = 'Completed';
+
+    // ContributionRecur has no processor_id (subscription was never created)
+    // and is in Failed state from the previous failed attempt.
+    Api4Mock::setResult('ContributionRecur.get', [[
+      'id' => 10,
+      'processor_id' => NULL,
+      'contribution_status_id:name' => 'Failed',
+    ]]);
+
+    $payment = $this->makePayment([
+      'status' => 'paid',
+      'sequenceType' => 'first',
+    ]);
+    $processor->exposedProcessOneOffOrFirstPaymentWebhook($payment, $contribution);
+
+    // Should retry subscription setup, not skip.
+    $this->assertSame(['handleFirstRecurringPaymentCompleted'], $processor->calledMethods);
+  }
+
+  public function testFirstRecurringSkipsWhenSubscriptionAlreadyExists(): void {
+    $processor = new WebhookTestableMolliePayment();
+    $contribution = $this->makePendingContribution(1, recurId: 10);
+    $contribution['contribution_status_id:name'] = 'Completed';
+
+    // ContributionRecur already has a subscription — normal idempotency.
+    Api4Mock::setResult('ContributionRecur.get', [[
+      'id' => 10,
+      'processor_id' => 'sub_existing',
+      'contribution_status_id:name' => 'In Progress',
+    ]]);
+
+    $payment = $this->makePayment([
+      'status' => 'paid',
+      'sequenceType' => 'first',
+    ]);
+    $processor->exposedProcessOneOffOrFirstPaymentWebhook($payment, $contribution);
+
+    $this->assertSame([], $processor->calledMethods);
+  }
+
+  public function testFirstRecurringSkipsWhenSingleInstallmentCompleted(): void {
+    $processor = new WebhookTestableMolliePayment();
+    $contribution = $this->makePendingContribution(1, recurId: 10);
+    $contribution['contribution_status_id:name'] = 'Completed';
+
+    // Single-installment recur: no processor_id but status is Completed,
+    // meaning it was correctly handled (no subscription needed).
+    Api4Mock::setResult('ContributionRecur.get', [[
+      'id' => 10,
+      'processor_id' => NULL,
+      'contribution_status_id:name' => 'Completed',
+    ]]);
+
+    $payment = $this->makePayment([
+      'status' => 'paid',
+      'sequenceType' => 'first',
+    ]);
     $processor->exposedProcessOneOffOrFirstPaymentWebhook($payment, $contribution);
 
     $this->assertSame([], $processor->calledMethods);

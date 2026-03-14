@@ -212,6 +212,9 @@ namespace Civi\Api4 {
   }
 
   class PaymentToken {
+    public static function get($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+      return new \Tests\Stubs\MockApi4Action('PaymentToken', 'get');
+    }
     public static function create($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('PaymentToken', 'create');
     }

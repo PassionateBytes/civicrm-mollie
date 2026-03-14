@@ -548,6 +548,13 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   /**
    * Process a webhook for a one-off payment or the first payment of a recurring series.
    *
+   * For first recurring payments, this also triggers subscription setup via
+   * handleFirstRecurringPaymentCompleted(). If subscription setup fails on a
+   * previous attempt (contribution already Completed, but ContributionRecur
+   * has no processor_id), the retry detects this and re-invokes setup.
+   * Exceptions from handleFirstRecurringPaymentCompleted() propagate to the
+   * caller so the webhook returns HTTP 500 and Mollie retries.
+   *
    * @param \Mollie\Api\Resources\Payment $molliePayment
    * @param array|null $contribution
    *   Existing contribution looked up by trxn_id, or NULL if not found.
@@ -564,8 +571,32 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       return;
     }
 
-    // Idempotency: skip if already completed.
+    // Idempotency: skip if already completed, unless subscription setup
+    // is still needed. The contribution may have been completed on a
+    // previous webhook attempt that failed during subscription creation
+    // (e.g., transient Mollie API error). In that case the ContributionRecur
+    // has no processor_id (subscription ID) and is not yet Completed.
     if ($contribution['contribution_status_id:name'] === 'Completed') {
+      if ($molliePayment->sequenceType === 'first' && !empty($contribution['contribution_recur_id'])) {
+        $recur = \Civi\Api4\ContributionRecur::get(FALSE)
+          ->addSelect('processor_id', 'contribution_status_id:name')
+          ->addWhere('id', '=', $contribution['contribution_recur_id'])
+          ->setLimit(1)
+          ->execute()
+          ->first();
+
+        if ($recur !== NULL && empty($recur['processor_id'])
+            && $recur['contribution_status_id:name'] !== 'Completed') {
+          $this->logInfo("Retrying subscription setup for Contribution #{$contribution['id']} — ContributionRecur #{$contribution['contribution_recur_id']} has no Mollie subscription (mollie: {$molliePayment->id})", [
+            'mollie_payment_id' => $molliePayment->id,
+            'contribution_id' => $contribution['id'],
+            'contribution_recur_id' => $contribution['contribution_recur_id'],
+          ]);
+          $this->handleFirstRecurringPaymentCompleted($contribution, $molliePayment);
+          return;
+        }
+      }
+
       $this->logDebug("Contribution #{$contribution['id']} already completed, skipping (mollie: {$molliePayment->id})", [
         'mollie_payment_id' => $molliePayment->id,
         'contribution_id' => $contribution['id'],
@@ -1134,8 +1165,18 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * Verifies the mandate exists, stores it as a PaymentToken, creates
    * the Mollie subscription, and updates the ContributionRecur.
    *
+   * On failure, cleans up any orphaned Mollie subscription, marks the
+   * ContributionRecur as Failed, then re-throws so the webhook returns
+   * HTTP 500 and Mollie retries. The retry detects the incomplete setup
+   * (Completed contribution + no processor_id) and re-invokes this method.
+   * All steps are idempotent: createPaymentToken uses find-or-create, and
+   * stale failure fields (cancel_date, end_date) are cleared on success.
+   *
    * @param array $contribution
    * @param \Mollie\Api\Resources\Payment $molliePayment
+   *
+   * @throws \Exception
+   *   Re-thrown after cleanup so the caller can signal Mollie to retry.
    */
   protected function handleFirstRecurringPaymentCompleted(array $contribution, \Mollie\Api\Resources\Payment $molliePayment): void {
     $recurId = $contribution['contribution_recur_id'];
@@ -1190,10 +1231,16 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
 
       $subscriptionId = $this->createMollieSubscription($customerId, $mandateId, $recur);
 
+      // Clear stale failure fields from any previous failed attempt
+      // (failContributionRecur sets cancel_date, end_date, cancel_reason).
+      // On first attempt these are already NULL so the clear is harmless.
       \Civi\Api4\ContributionRecur::update(FALSE)
         ->addWhere('id', '=', $recurId)
         ->addValue('processor_id', $subscriptionId)
         ->addValue('contribution_status_id:name', 'In Progress')
+        ->addValue('cancel_date', NULL)
+        ->addValue('cancel_reason', NULL)
+        ->addValue('end_date', NULL)
         ->execute();
 
       $this->logInfo("Mollie subscription {$subscriptionId} created for ContributionRecur #{$recurId} (customer: {$customerId}, mandate: {$mandateId})", [
@@ -1231,6 +1278,12 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       }
 
       $this->failContributionRecur($recurId, $molliePayment);
+
+      // Re-throw so handlePaymentNotification() returns HTTP 500 and Mollie
+      // retries the webhook. The retry will detect the incomplete subscription
+      // setup (Completed contribution + no processor_id on ContributionRecur)
+      // and re-attempt via the idempotency check above.
+      throw $e;
     }
   }
 
@@ -1486,7 +1539,11 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
   }
 
   /**
-   * Create a PaymentToken record for a Mollie mandate.
+   * Find or create a PaymentToken record for a Mollie mandate.
+   *
+   * Uses find-or-create to be idempotent across webhook retries —
+   * if the token was already created on a previous attempt, returns
+   * the existing ID instead of creating a duplicate.
    *
    * @param int $contactId
    * @param string $mandateId
@@ -1495,6 +1552,21 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    *   The PaymentToken ID.
    */
   protected function createPaymentToken(int $contactId, string $mandateId): int {
+    // Find-or-create: on webhook retry the token from the first attempt
+    // may already exist. Avoids duplicate PaymentToken records.
+    $existing = \Civi\Api4\PaymentToken::get(FALSE)
+      ->addSelect('id')
+      ->addWhere('contact_id', '=', $contactId)
+      ->addWhere('payment_processor_id', '=', $this->_paymentProcessor['id'])
+      ->addWhere('token', '=', $mandateId)
+      ->setLimit(1)
+      ->execute()
+      ->first();
+
+    if ($existing !== NULL) {
+      return $existing['id'];
+    }
+
     $result = \Civi\Api4\PaymentToken::create(FALSE)
       ->addValue('contact_id', $contactId)
       ->addValue('payment_processor_id', $this->_paymentProcessor['id'])

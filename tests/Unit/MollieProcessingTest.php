@@ -411,6 +411,81 @@ class MollieProcessingTest extends TestCase {
     $this->assertNotEmpty($subIdCall);
   }
 
+  public function testFirstRecurringSubscriptionFailureRethrowsAndFailsRecur(): void {
+    $proc = $this->makeProcessor();
+    $payment = $this->makePayment(['mandateId' => 'mdt_test']);
+    $contribution = $this->makeContribution(1, recurId: 10);
+
+    Api4Mock::setResult('ContributionRecur.get', [[
+      'id' => 10, 'installments' => 6, 'contact_id' => 100,
+      'frequency_unit' => 'month', 'frequency_interval' => 1,
+      'currency' => 'EUR', 'amount' => '25.00',
+      'next_sched_contribution_date' => '2026-04-15 00:00:00',
+    ]]);
+
+    // Subscription creation throws a transient API error.
+    $mockSubEndpoint = $this->createMock(SubscriptionEndpoint::class);
+    $mockSubEndpoint->method('createForId')
+      ->willThrowException(new ApiException('Service unavailable', 503));
+
+    $mockClient = $this->createMock(MollieApiClient::class);
+    $mockClient->subscriptions = $mockSubEndpoint;
+    $proc->stubbedMollieClient = $mockClient;
+
+    // Must re-throw so the webhook returns HTTP 500 and Mollie retries.
+    $thrown = NULL;
+    try {
+      $proc->exposedHandleFirstRecurringPaymentCompleted($contribution, $payment);
+    }
+    catch (\Exception $thrown) {
+      // Expected.
+    }
+
+    $this->assertNotNull($thrown, 'Exception should be re-thrown after cleanup');
+    $this->assertInstanceOf(ApiException::class, $thrown);
+    $this->assertStringContainsString('Service unavailable', $thrown->getMessage());
+
+    // failContributionRecur should have been called before re-throw.
+    $this->assertContains('failContributionRecur', $proc->calledMethods);
+    // createPaymentToken should have been called before the failure.
+    $this->assertContains('createPaymentToken', $proc->calledMethods);
+  }
+
+  public function testFirstRecurringSuccessClearsStaleFailureFields(): void {
+    $proc = $this->makeProcessor();
+    $payment = $this->makePayment(['mandateId' => 'mdt_test']);
+    $contribution = $this->makeContribution(1, recurId: 10);
+
+    Api4Mock::setResult('ContributionRecur.get', [[
+      'id' => 10, 'installments' => 6, 'contact_id' => 100,
+      'frequency_unit' => 'month', 'frequency_interval' => 1,
+      'currency' => 'EUR', 'amount' => '25.00',
+      'next_sched_contribution_date' => '2026-04-15 00:00:00',
+    ]]);
+
+    $mockSub = new Subscription($this->createMock(MollieApiClient::class));
+    $mockSub->id = 'sub_retry';
+
+    $mockSubEndpoint = $this->createMock(SubscriptionEndpoint::class);
+    $mockSubEndpoint->method('createForId')->willReturn($mockSub);
+
+    $mockClient = $this->createMock(MollieApiClient::class);
+    $mockClient->subscriptions = $mockSubEndpoint;
+    $proc->stubbedMollieClient = $mockClient;
+
+    $proc->exposedHandleFirstRecurringPaymentCompleted($contribution, $payment);
+
+    // The update that sets In Progress should also clear stale failure fields.
+    $updateCalls = array_values($this->getApi4Calls('ContributionRecur', 'update'));
+    $inProgressCall = array_filter($updateCalls, fn($c) => ($c['values']['contribution_status_id:name'] ?? '') === 'In Progress');
+    $this->assertNotEmpty($inProgressCall);
+
+    $call = array_values($inProgressCall)[0];
+    $this->assertNull($call['values']['cancel_date']);
+    $this->assertNull($call['values']['cancel_reason']);
+    $this->assertNull($call['values']['end_date']);
+  }
+
   // -----------------------------------------------------------------------
   // cancelSubscription
   // -----------------------------------------------------------------------
