@@ -208,6 +208,20 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       if ($newInstallments !== NULL && $newInstallments <= 1) {
         throw new PaymentProcessorException(E::ts('Installments must be at least 2 for a subscription.'));
       }
+      // Validate that the new times value exceeds payments already charged.
+      // Mollie's `times` is the total lifetime count, so setting it at or below
+      // the number already executed would immediately complete the subscription.
+      $subscription = $this->getMollieApiClient()->subscriptions->getForId($mollieCustomer, $recur['processor_id']);
+      if ($subscription->timesRemaining !== NULL) {
+        $timesExecuted = $subscription->times - $subscription->timesRemaining;
+        if ($newInstallments - 1 <= $timesExecuted) {
+          throw new PaymentProcessorException(E::ts(
+            'Cannot reduce installments below the %1 payments already charged by Mollie.',
+            [1 => $timesExecuted + 1]
+          ));
+        }
+      }
+
       $updateData['times'] = $newInstallments - 1;
     }
 
