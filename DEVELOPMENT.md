@@ -1,6 +1,6 @@
 # Development Guide
 
-Developer documentation for the Mollie Payment Processor CiviCRM extension (`nl.stichtinggast.mollie`).
+Developer documentation for the Mollie Payment Processor CiviCRM extension (`com.passionate-bytes.mollie`).
 
 ## CiviCRM Developer Resources
 

@@ -8,7 +8,7 @@
 
   {if $isList}
     {foreach from=$items item=item name=items}
-      <h4 style="margin: 1em 0 0.3em;">{ts domain="nl.stichtinggast.mollie"}Record{/ts} #{$smarty.foreach.items.iteration}:</h4>
+      <h4 style="margin: 1em 0 0.3em;">{ts domain="com.passionate-bytes.mollie"}Record{/ts} #{$smarty.foreach.items.iteration}:</h4>
       {include file="CRM/Mollie/Page/MollieDetailTable.tpl" fields=$item.fields nested=false item=$item}
     {/foreach}
 
@@ -16,12 +16,12 @@
       <div class="mollie-detail-pagination">
         {if $pagination.previous}
           <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=`$pagination.previous|escape`"}" class="open-inline-noreturn button">
-            <span><i class="crm-i fa-chevron-left"></i> {ts domain="nl.stichtinggast.mollie"}Previous{/ts}</span>
+            <span><i class="crm-i fa-chevron-left"></i> {ts domain="com.passionate-bytes.mollie"}Previous{/ts}</span>
           </a>
         {/if}
         {if $pagination.next}
           <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=`$pagination.next|escape`"}" class="open-inline-noreturn button">
-            <span><i class="crm-i fa-chevron-right"></i> {ts domain="nl.stichtinggast.mollie"}Next{/ts}</span>
+            <span><i class="crm-i fa-chevron-right"></i> {ts domain="com.passionate-bytes.mollie"}Next{/ts}</span>
           </a>
         {/if}
       </div>
@@ -90,7 +90,7 @@
     <div class="mollie-detail-footer">
       {if $dashboardUrl}
         <a href="{$dashboardUrl|escape}" onclick="window.open(this.href); return false;" class="button">
-          <span><i class="crm-i fa-external-link"></i> {ts domain="nl.stichtinggast.mollie"}Open in Mollie{/ts}</span>
+          <span><i class="crm-i fa-external-link"></i> {ts domain="com.passionate-bytes.mollie"}Open in Mollie{/ts}</span>
         </a>
       {/if}
       <div class="mollie-related-links">
@@ -98,7 +98,7 @@
           <a href="{crmURL p='civicrm/admin/mollie/detail' q="api_path=`$href|escape`"}" class="open-inline-noreturn"><i class="crm-i fa-arrow-circle-right"></i> {$label|escape}</a>
         {/foreach}
         {if $documentationUrl}
-          <a href="{$documentationUrl|escape}" onclick="window.open(this.href); return false;"><i class="crm-i fa-book"></i> {ts domain="nl.stichtinggast.mollie"}API Docs{/ts}</a>
+          <a href="{$documentationUrl|escape}" onclick="window.open(this.href); return false;"><i class="crm-i fa-book"></i> {ts domain="com.passionate-bytes.mollie"}API Docs{/ts}</a>
         {/if}
       </div>
     </div>

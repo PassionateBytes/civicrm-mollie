@@ -2,7 +2,7 @@
 
 A CiviCRM extension for processing one-off and recurring contributions through [Mollie](https://mollie.com).
 
-**Extension key**: `nl.stichtinggast.mollie`
+**Extension key**: `com.passionate-bytes.mollie`
 
 ## Requirements
 

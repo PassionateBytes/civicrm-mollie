@@ -1,15 +1,15 @@
 <?xml version="1.0"?>
-<extension key="nl.stichtinggast.mollie" type="module">
+<extension key="com.passionate-bytes.mollie" type="module">
   <file>mollie</file>
   <name>Mollie Payment Processor</name>
   <description>Payment processor for Mollie supporting one-off and recurring donations via the Mollie PHP SDK.</description>
   <license>AGPL-3.0</license>
   <maintainer>
-    <author>Stichting GAST</author>
-    <email>ict@stichtinggast.nl</email>
+    <author>Passionate Bytes Solutions</author>
+    <email>paul@passionate-bytes.com</email>
   </maintainer>
   <urls>
-    <url desc="Main Extension Page">https://www.stichtinggast.nl</url>
+    <url desc="Main Extension Page">https://www.passionate-bytes.com</url>
     <url desc="Licensing">http://www.gnu.org/licenses/agpl-3.0.html</url>
   </urls>
   <tags>

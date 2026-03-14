@@ -8,7 +8,7 @@
  */
 class CRM_Mollie_ExtensionUtil {
   const SHORT_NAME = 'mollie';
-  const LONG_NAME = 'nl.stichtinggast.mollie';
+  const LONG_NAME = 'com.passionate-bytes.mollie';
   const CLASS_PREFIX = 'CRM_Mollie';
 
   /**
