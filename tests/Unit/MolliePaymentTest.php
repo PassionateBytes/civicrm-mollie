@@ -76,9 +76,24 @@ class MolliePaymentTest extends TestCase {
   // mapCiviCrmFrequencyToMollie
   // -----------------------------------------------------------------------
 
-  public function testMapFrequencyMonthly(): void {
+  public function testMapFrequencyMonthlySingular(): void {
+    $payment = new TestableMolliePayment();
+    $this->assertSame('1 month', $payment->exposedMapCiviCrmFrequencyToMollie('month', 1));
+  }
+
+  public function testMapFrequencyMonthlyPlural(): void {
     $payment = new TestableMolliePayment();
     $this->assertSame('5 months', $payment->exposedMapCiviCrmFrequencyToMollie('month', 5));
+  }
+
+  public function testMapFrequencyWeeklySingular(): void {
+    $payment = new TestableMolliePayment();
+    $this->assertSame('1 week', $payment->exposedMapCiviCrmFrequencyToMollie('week', 1));
+  }
+
+  public function testMapFrequencyYearSingular(): void {
+    $payment = new TestableMolliePayment();
+    $this->assertSame('12 months', $payment->exposedMapCiviCrmFrequencyToMollie('year', 1));
   }
 
   public function testMapFrequencyYearToMonths(): void {

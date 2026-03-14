@@ -1526,15 +1526,16 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    * @throws PaymentProcessorException
    */
   protected function mapCiviCrmFrequencyToMollie(string $frequencyUnit, int $frequencyInterval): string {
-    return match ($frequencyUnit) {
-      'day' => "$frequencyInterval days",
-      'week' => "$frequencyInterval weeks",
-      'month' => "$frequencyInterval months",
-      'year' => ($frequencyInterval * 12) . ' months',
+    $n = $frequencyUnit === 'year' ? $frequencyInterval * 12 : $frequencyInterval;
+    $unit = match ($frequencyUnit) {
+      'day' => $n === 1 ? 'day' : 'days',
+      'week' => $n === 1 ? 'week' : 'weeks',
+      'month', 'year' => $n === 1 ? 'month' : 'months',
       default => throw new PaymentProcessorException(
         E::ts('Unsupported recurring frequency: %1', [1 => $frequencyUnit])
       ),
     };
+    return "$n $unit";
   }
 
   /**
