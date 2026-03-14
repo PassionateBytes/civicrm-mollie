@@ -1280,6 +1280,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       // payment via Payment.create for proper financial bookkeeping.
       $result = civicrm_api3('Contribution', 'repeattransaction', [
         'contribution_recur_id' => $contributionRecur['id'],
+        'contribution_status_id' => 'Pending',
         'trxn_id' => $molliePayment->id,
         'payment_processor_id' => $contributionRecur['payment_processor_id'],
         'receive_date' => $molliePayment->paidAt ?? date('Y-m-d H:i:s'),
@@ -1339,6 +1340,7 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
       // create as Pending, then use failContribution() to set the correct status.
       $result = civicrm_api3('Contribution', 'repeattransaction', [
         'contribution_recur_id' => $contributionRecur['id'],
+        'contribution_status_id' => 'Pending',
         'trxn_id' => $molliePayment->id,
         'payment_processor_id' => $contributionRecur['payment_processor_id'],
         'receive_date' => date('Y-m-d H:i:s'),
