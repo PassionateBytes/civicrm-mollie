@@ -150,6 +150,12 @@ class Get extends AbstractAction {
     foreach ([FALSE, TRUE] as $testMode) {
       try {
         $client = self::getClientForMode($testMode);
+        // performHttpCall() is public but not part of the SDK's documented
+        // API surface. It returns raw \stdClass JSON, which is needed here
+        // to generically display any Mollie resource. The typed endpoint
+        // methods ($client->payments->get() etc.) return hydrated objects
+        // that don't expose all fields. If a future SDK major version
+        // removes this method, this admin-only feature will need updating.
         $resource = $client->performHttpCall('GET', $apiPath);
         break;
       }
