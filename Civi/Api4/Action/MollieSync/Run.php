@@ -375,11 +375,15 @@ class Run extends AbstractAction {
    *
    * @return \Mollie\Api\MollieApiClient
    */
+  private const CLIENT_CACHE_TTL = 300;
+
+  /** @var array<int, array{client: \Mollie\Api\MollieApiClient, expires: int}> */
   protected static array $clientCache = [];
 
   protected static function getClientForProcessor(int $processorId): \Mollie\Api\MollieApiClient {
-    if (isset(self::$clientCache[$processorId])) {
-      return self::$clientCache[$processorId];
+    if (isset(self::$clientCache[$processorId])
+        && self::$clientCache[$processorId]['expires'] > time()) {
+      return self::$clientCache[$processorId]['client'];
     }
 
     $processor = System::singleton()->getById($processorId);
@@ -388,7 +392,10 @@ class Run extends AbstractAction {
 
     $client = new \Mollie\Api\MollieApiClient();
     $client->setApiKey($apiKey);
-    self::$clientCache[$processorId] = $client;
+    self::$clientCache[$processorId] = [
+      'client' => $client,
+      'expires' => time() + self::CLIENT_CACHE_TTL,
+    ];
 
     return $client;
   }
