@@ -61,6 +61,10 @@ namespace Civi\Payment {
     public function getContactID(): int {
       return (int) ($this->data['contactID'] ?? 0);
     }
+
+    public function getCurrency(): string {
+      return $this->data['currency'] ?? $this->data['currencyID'] ?? 'EUR';
+    }
   }
 }
 
@@ -171,6 +175,9 @@ namespace Civi\Api4 {
   }
 
   class Contribution {
+    public static function get($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+      return new \Tests\Stubs\MockApi4Action('Contribution', 'get');
+    }
     public static function update($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('Contribution', 'update');
     }
@@ -185,6 +192,21 @@ namespace Civi\Api4 {
   class Contact {
     public static function get($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
       return new \Tests\Stubs\MockApi4Action('Contact', 'get');
+    }
+  }
+
+  class MollieCustomer {
+    public static function get($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+      return new \Tests\Stubs\MockApi4Action('MollieCustomer', 'get');
+    }
+    public static function create($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+      return new \Tests\Stubs\MockApi4Action('MollieCustomer', 'create');
+    }
+  }
+
+  class PaymentToken {
+    public static function create($checkPermissions = TRUE): \Tests\Stubs\MockApi4Action {
+      return new \Tests\Stubs\MockApi4Action('PaymentToken', 'create');
     }
   }
 }
@@ -214,9 +236,42 @@ namespace {
   class CRM_Core_Payment {
     protected $_mode;
     protected $_paymentProcessor;
+    protected $_component;
+
+    const BILLING_MODE_NOTIFY = 4;
+
     public function __construct($mode = '', &$paymentProcessor = []) {
       $this->_mode = $mode;
       $this->_paymentProcessor = $paymentProcessor;
+    }
+
+    protected function setStatusPaymentCompleted(array $params): array {
+      return array_merge($params, ['payment_status_id' => 1, 'payment_status' => 'Completed']);
+    }
+
+    protected function setStatusPaymentPending(array $params): array {
+      return array_merge($params, ['payment_status_id' => 2, 'payment_status' => 'Pending']);
+    }
+
+    protected function getReturnSuccessUrl(string $qfKey): string {
+      return "https://example.com/return?qfKey={$qfKey}";
+    }
+
+    protected function getNotifyUrl(): string {
+      return 'https://example.com/webhook';
+    }
+  }
+
+  class CRM_Utils_System {
+    /** @var string|null Captured redirect URL (test override instead of exit). */
+    public static ?string $redirectUrl = NULL;
+
+    public static function redirect(string $url): void {
+      self::$redirectUrl = $url;
+    }
+
+    public static function resetRedirect(): void {
+      self::$redirectUrl = NULL;
     }
   }
 
