@@ -1,6 +1,6 @@
 # Mollie Payment Processor for CiviCRM
 
-A CiviCRM extension for processing one-off and recurring contributions through [Mollie](https://mollie.com). Built for [Stichting GAST](https://www.stichtinggast.nl), a volunteer-run NGO in Nijmegen, Netherlands.
+A CiviCRM extension for processing one-off and recurring contributions through [Mollie](https://mollie.com).
 
 **Extension key**: `nl.stichtinggast.mollie`
 
@@ -23,30 +23,34 @@ A CiviCRM extension for processing one-off and recurring contributions through [
 - **Recurring lifecycle management** — cancel subscriptions and change amounts from within CiviCRM
 - **Test mode** — full support for Mollie test API keys
 
-### Supported Payment Methods
-
-Any payment method enabled in your Mollie account can be used for one-off contributions.
-
-For recurring contributions, only methods that support mandates are applicable:
-
-- iDEAL (creates a SEPA Direct Debit mandate)
-- Credit Card
-- PayPal
-- Bancontact, KBC/CBC, Belfius (create SEPA DD mandates)
-
 ### Supported Frequencies
 
-| Frequency | Mollie Interval |
-|-----------|-----------------|
-| Every N days | `N days` |
-| Every N weeks | `N weeks` |
-| Every N months | `N months` |
-| Yearly | `12 months` |
+| Frequency      | Mollie Interval |
+| -------------- | --------------- |
+| Every N days   | `N days`        |
+| Every N weeks  | `N weeks`       |
+| Every N months | `N months`      |
+| Yearly         | `12 months`     |
 
 ## Installation
 
-1. Copy or clone this extension into your CiviCRM extensions directory.
+1. Copy or clone this extension into your CiviCRM extensions directory (e.g., `sites/default/files/civicrm/ext/`). All dependencies are bundled.
 2. Enable the extension via **Administer > System Settings > Extensions**.
+
+### Upgrading
+
+1. Replace the extension files in your extensions directory with the new version.
+2. Navigate to **Administer > System Settings > Extensions** and run any pending database upgrades if prompted.
+3. Managed entities (scheduled jobs, saved searches, message templates) are updated automatically. Customizations to the editable reminder email template are preserved.
+
+### Uninstalling
+
+Disable and uninstall the extension via **Administer > System Settings > Extensions**. This removes:
+
+- The `civicrm_mollie_customer` table (Mollie customer ID mappings)
+- Managed entities (scheduled jobs, saved searches, option values, navigation items)
+
+Existing contributions, recurring contributions, and payment tokens are **not deleted** — they remain in CiviCRM as standard financial records. Active Mollie subscriptions are **not cancelled** — cancel them manually in the Mollie dashboard or via CiviCRM before uninstalling.
 
 ## Configuration
 
@@ -61,16 +65,18 @@ For recurring contributions, only methods that support mandates are applicable:
 
 CiviCRM's built-in test/live mode toggle determines which key is used at runtime.
 
+**Test mode note**: Mollie's test environment supports one-off payments and first recurring payments. However, Mollie does not automatically trigger subsequent subscription charges in test mode — those can only be verified with live payments. See [Mollie's testing guide](https://docs.mollie.com/overview/testing) for details.
+
 ### Extension Settings
 
 Extension settings are available at **Administer > CiviContribute > Mollie Settings** (`civicrm/admin/mollie/settings`):
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| Payment Description | `Donation #{contribution.id}` | Template for bank statement descriptions |
-| Enable Pre-Payment Reminders | Off | Send email reminders before recurring charges |
-| Reminder Days Before Charge | 7 | How many days before the charge to send the reminder |
-| Enable Debug Logging | Off | Verbose Mollie API logging (disable in production) |
+| Setting                      | Default                       | Description                                          |
+| ---------------------------- | ----------------------------- | ---------------------------------------------------- |
+| Payment Description          | `Donation #{contribution.id}` | Template for bank statement descriptions             |
+| Enable Pre-Payment Reminders | Off                           | Send email reminders before recurring charges        |
+| Reminder Days Before Charge  | 7                             | How many days before the charge to send the reminder |
+| Enable Debug Logging         | Off                           | Verbose Mollie API logging (disable in production)   |
 
 ### Contribution Pages
 
@@ -94,6 +100,16 @@ For detailed payment flow sequences, see the [Payment Flows](DEVELOPMENT.md#paym
 3. Once the first payment succeeds, a Mollie subscription is automatically created.
 4. Mollie handles all subsequent charges on schedule — CiviCRM does not trigger them.
 5. Each charge triggers a webhook that creates a new contribution in CiviCRM.
+
+### Chargebacks and Refunds
+
+The extension automatically handles chargebacks and refunds initiated through Mollie. When Mollie notifies CiviCRM of a chargeback or refund, the extension:
+
+- Records the reversal as a negative payment for proper financial bookkeeping
+- Updates the contribution status (Chargeback, Refunded, or Partially paid)
+- Attaches a Note to the contribution with details (amount, date, reason) for staff reference
+
+No manual action is required — chargebacks and refunds processed through Mollie are reflected in CiviCRM automatically.
 
 ### Pre-Payment Reminders
 
@@ -136,11 +152,11 @@ Sends pre-payment reminder emails before upcoming recurring charges (only active
 
 This extension uses standard CiviCRM permissions — no custom permissions are defined.
 
-| Component | Required Permission |
-|-----------|-------------------|
-| Payment Dashboard | `access CiviContribute` |
-| Extension Settings | `administer payment processors` |
-| MollieCustomer API (read) | `access CiviContribute` |
+| Component                  | Required Permission             |
+| -------------------------- | ------------------------------- |
+| Payment Dashboard          | `access CiviContribute`         |
+| Extension Settings         | `administer payment processors` |
+| MollieCustomer API (read)  | `access CiviContribute`         |
 | MollieCustomer API (write) | `administer payment processors` |
 
 All search displays respect CiviCRM's standard contact and contribution ACLs.
@@ -165,7 +181,7 @@ If a Mollie webhook arrives for a payment that cannot be matched to a CiviCRM co
 
 Enable **Debug Logging** in the extension settings to log detailed Mollie API request/response data. Logs are written to CiviCRM's log system under the `mollie` channel. **Disable this in production** as it produces verbose output.
 
-## Development
+## Development & Architecture Details
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for architecture details, design decisions, and developer workflow.
 
@@ -175,4 +191,4 @@ AGPL-3.0 — see [LICENSE](LICENSE).
 
 ## Credits
 
-Developed by **Paul Bütof** ([Passionate Bytes Solutions](https://www.passionate-bytes.com)) for **Stichting GAST** ([stichtinggast.nl](https://www.stichtinggast.nl)).
+Developed by **Paul Bütof** ([Passionate Bytes Solutions](https://www.passionate-bytes.com)) as a volunteering effort for [Stichting GAST](https://www.stichtinggast.nl).
