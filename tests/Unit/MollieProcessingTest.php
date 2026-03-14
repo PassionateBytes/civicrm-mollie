@@ -573,4 +573,35 @@ class MollieProcessingTest extends TestCase {
       'installments' => 1,
     ]);
   }
+
+  public function testChangeInstallmentsOpenEndedToFiniteSendsTimes(): void {
+    $proc = $this->makeProcessor();
+
+    Api4Mock::setResult('ContributionRecur.get', [[
+      'processor_id' => 'sub_abc', 'contact_id' => 100,
+      'currency' => 'EUR', 'installments' => NULL,
+    ]]);
+
+    $mockSubEndpoint = $this->createMock(SubscriptionEndpoint::class);
+    $mockSubEndpoint->expects($this->once())
+      ->method('update')
+      ->with('cst_test123', 'sub_abc', $this->callback(function ($data) {
+        // times = 12 - 1 = 11
+        return $data['times'] === 11;
+      }))
+      ->willReturn(new Subscription($this->createMock(MollieApiClient::class)));
+
+    $mockClient = $this->createMock(MollieApiClient::class);
+    $mockClient->subscriptions = $mockSubEndpoint;
+    $proc->stubbedMollieClient = $mockClient;
+
+    $message = NULL;
+    $result = $proc->exposedChangeSubscriptionAmount($message, [
+      'contributionRecurID' => 10,
+      'amount' => '25.00',
+      'installments' => 12,
+    ]);
+
+    $this->assertTrue($result);
+  }
 }
