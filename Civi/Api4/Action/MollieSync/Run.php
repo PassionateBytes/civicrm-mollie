@@ -129,6 +129,11 @@ class Run extends AbstractAction {
   /**
    * Compare Mollie subscription state with CiviCRM and return needed updates.
    *
+   * When the status transitions to a terminal state (Completed, Cancelled,
+   * Failed), sets the appropriate date fields. When recovering to In Progress
+   * (e.g., a Failed subscription becomes active again), clears stale
+   * cancel_date, cancel_reason, and end_date to avoid data inconsistency.
+   *
    * @param Subscription $subscription
    *   Mollie subscription resource.
    * @param array $recur
@@ -158,6 +163,16 @@ class Run extends AbstractAction {
       }
       if ($newStatus === 'Failed') {
         $updates['next_sched_contribution_date'] = NULL;
+      }
+      // Clear stale failure/cancellation fields when recovering to an active
+      // state. These may have been set by a prior Cancelled or Failed
+      // transition (either from this sync job or from the webhook handler's
+      // failContributionRecur). Leaving them would create an inconsistency
+      // where the record is In Progress but still shows a cancel/end date.
+      if ($newStatus === 'In Progress') {
+        $updates['cancel_date'] = NULL;
+        $updates['cancel_reason'] = NULL;
+        $updates['end_date'] = NULL;
       }
     }
 

@@ -89,6 +89,16 @@ namespace Tests\Stubs {
     /** @var array Captured Api4 calls with entity, action, values, wheres. */
     public static array $calls = [];
 
+    /**
+     * Optional interceptor called during execute() before returning results.
+     *
+     * Receives (string $key, array $values, array $wheres). May throw to
+     * simulate a database or API failure at a specific point in the flow.
+     *
+     * @var \Closure|null
+     */
+    public static ?\Closure $executeInterceptor = NULL;
+
     public static function setResult(string $key, $data): void {
       self::$results[$key] = $data;
     }
@@ -96,6 +106,7 @@ namespace Tests\Stubs {
     public static function reset(): void {
       self::$results = [];
       self::$calls = [];
+      self::$executeInterceptor = NULL;
     }
   }
 
@@ -134,6 +145,9 @@ namespace Tests\Stubs {
         'values' => $this->values,
         'wheres' => $this->wheres,
       ];
+      if (Api4Mock::$executeInterceptor !== NULL) {
+        (Api4Mock::$executeInterceptor)($key, $this->values, $this->wheres);
+      }
       $data = Api4Mock::$results[$key] ?? [];
       return new MockApi4Result(is_array($data) ? $data : []);
     }

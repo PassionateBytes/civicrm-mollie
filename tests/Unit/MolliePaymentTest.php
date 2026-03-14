@@ -101,6 +101,16 @@ class MolliePaymentTest extends TestCase {
     $this->assertSame('24 months', $payment->exposedMapCiviCrmFrequencyToMollie('year', 2));
   }
 
+  public function testMapFrequencyDaySingular(): void {
+    $payment = new TestableMolliePayment();
+    $this->assertSame('1 day', $payment->exposedMapCiviCrmFrequencyToMollie('day', 1));
+  }
+
+  public function testMapFrequencyDayPlural(): void {
+    $payment = new TestableMolliePayment();
+    $this->assertSame('14 days', $payment->exposedMapCiviCrmFrequencyToMollie('day', 14));
+  }
+
   public function testMapFrequencyInvalidUnitThrows(): void {
     $payment = new TestableMolliePayment();
     $this->expectException(PaymentProcessorException::class);

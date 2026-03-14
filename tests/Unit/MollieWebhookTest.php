@@ -541,6 +541,81 @@ class MollieWebhookTest extends TestCase {
   }
 
   // -----------------------------------------------------------------------
+  // handlePaymentNotification — API fetch error classification
+  // -----------------------------------------------------------------------
+
+  /**
+   * @dataProvider transientHttpCodeProvider
+   */
+  public function testTransientApiErrorReturnsHttp500ForRetry(int $httpCode): void {
+    \CiviLockManagerMock::$acquireSucceeds = TRUE;
+    $_POST['id'] = 'tr_transient';
+
+    $mockPayments = $this->createMock(\Mollie\Api\Endpoints\PaymentEndpoint::class);
+    $mockPayments->method('get')
+      ->willThrowException(new \Mollie\Api\Exceptions\ApiException('error', $httpCode));
+    $mockClient = $this->createMock(MollieApiClient::class);
+    $mockClient->payments = $mockPayments;
+
+    $processor = new NotificationTestableMollie();
+    $processor->stubbedClient = $mockClient;
+    http_response_code(200);
+    $processor->callHandlePaymentNotification();
+
+    $this->assertFalse($processor->routeWasCalled);
+    $this->assertSame(500, http_response_code(), "HTTP code {$httpCode} should be classified as transient (→ 500)");
+
+    \CiviLockManagerMock::reset();
+    unset($_POST['id']);
+  }
+
+  public static function transientHttpCodeProvider(): array {
+    return [
+      'network failure' => [0],
+      'rate limited' => [429],
+      'server error' => [500],
+      'bad gateway' => [502],
+      'service unavailable' => [503],
+      'gateway timeout' => [504],
+    ];
+  }
+
+  /**
+   * @dataProvider permanentHttpCodeProvider
+   */
+  public function testPermanentApiErrorReturnsHttp200ToStopRetries(int $httpCode): void {
+    \CiviLockManagerMock::$acquireSucceeds = TRUE;
+    $_POST['id'] = 'tr_permanent';
+
+    $mockPayments = $this->createMock(\Mollie\Api\Endpoints\PaymentEndpoint::class);
+    $mockPayments->method('get')
+      ->willThrowException(new \Mollie\Api\Exceptions\ApiException('error', $httpCode));
+    $mockClient = $this->createMock(MollieApiClient::class);
+    $mockClient->payments = $mockPayments;
+
+    $processor = new NotificationTestableMollie();
+    $processor->stubbedClient = $mockClient;
+    http_response_code(500);
+    $processor->callHandlePaymentNotification();
+
+    $this->assertFalse($processor->routeWasCalled);
+    $this->assertSame(200, http_response_code(), "HTTP code {$httpCode} should be classified as permanent (→ 200)");
+
+    \CiviLockManagerMock::reset();
+    unset($_POST['id']);
+  }
+
+  public static function permanentHttpCodeProvider(): array {
+    return [
+      'invalid API key' => [401],
+      'forbidden' => [403],
+      'not found' => [404],
+      'gone' => [410],
+      'unprocessable' => [422],
+    ];
+  }
+
+  // -----------------------------------------------------------------------
   // handlePaymentNotification — lock behavior
   // -----------------------------------------------------------------------
 

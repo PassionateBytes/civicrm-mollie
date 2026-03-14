@@ -226,6 +226,10 @@ namespace Tests\Unit {
 
       $this->assertSame('In Progress', $updates['contribution_status_id:name']);
       $this->assertSame('2026-04-15 00:00:00', $updates['next_sched_contribution_date']);
+      // Stale failure/cancellation fields must be cleared on recovery.
+      $this->assertNull($updates['cancel_date']);
+      $this->assertNull($updates['cancel_reason']);
+      $this->assertNull($updates['end_date']);
     }
 
     public function testBuildUpdatesNextDateChanged(): void {

@@ -451,6 +451,54 @@ class MollieProcessingTest extends TestCase {
     $this->assertContains('createPaymentToken', $proc->calledMethods);
   }
 
+  public function testFirstRecurringSubscriptionFailureCleansUpOrphanedSubscription(): void {
+    $proc = $this->makeProcessor();
+    $payment = $this->makePayment(['mandateId' => 'mdt_test']);
+    $contribution = $this->makeContribution(1, recurId: 10);
+
+    Api4Mock::setResult('ContributionRecur.get', [[
+      'id' => 10, 'installments' => 6, 'contact_id' => 100,
+      'frequency_unit' => 'month', 'frequency_interval' => 1,
+      'currency' => 'EUR', 'amount' => '25.00',
+      'next_sched_contribution_date' => '2026-04-15 00:00:00',
+    ]]);
+
+    // Subscription creation succeeds (sets $subscriptionId in the caller).
+    $mockSub = new Subscription($this->createMock(MollieApiClient::class));
+    $mockSub->id = 'sub_orphaned';
+
+    $mockSubEndpoint = $this->createMock(SubscriptionEndpoint::class);
+    $mockSubEndpoint->method('createForId')->willReturn($mockSub);
+    // Expect cleanup: cancelForId must be called with the orphaned subscription.
+    $mockSubEndpoint->expects($this->once())
+      ->method('cancelForId')
+      ->with('cst_test123', 'sub_orphaned');
+
+    $mockClient = $this->createMock(MollieApiClient::class);
+    $mockClient->subscriptions = $mockSubEndpoint;
+    $proc->stubbedMollieClient = $mockClient;
+
+    // Make the ContributionRecur update (after subscription creation) throw,
+    // simulating a DB failure after the subscription exists on Mollie.
+    Api4Mock::$executeInterceptor = function (string $key, array $values) {
+      if ($key === 'ContributionRecur.update' && isset($values['processor_id'])) {
+        throw new \RuntimeException('Simulated DB failure after subscription creation');
+      }
+    };
+
+    $thrown = NULL;
+    try {
+      $proc->exposedHandleFirstRecurringPaymentCompleted($contribution, $payment);
+    }
+    catch (\Exception $thrown) {
+      // Expected.
+    }
+
+    $this->assertNotNull($thrown, 'Exception should propagate after cleanup');
+    $this->assertContains('failContributionRecur', $proc->calledMethods);
+    // cancelForId expectation is verified by PHPUnit mock framework.
+  }
+
   public function testFirstRecurringSuccessClearsStaleFailureFields(): void {
     $proc = $this->makeProcessor();
     $payment = $this->makePayment(['mandateId' => 'mdt_test']);
