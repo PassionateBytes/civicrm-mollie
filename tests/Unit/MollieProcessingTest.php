@@ -604,4 +604,30 @@ class MollieProcessingTest extends TestCase {
 
     $this->assertTrue($result);
   }
+
+  // -----------------------------------------------------------------------
+  // cancelSubscription — error handling
+  // -----------------------------------------------------------------------
+
+  public function testCancelSubscriptionApiErrorThrowsPaymentProcessorException(): void {
+    $proc = $this->makeProcessor();
+
+    Api4Mock::setResult('ContributionRecur.get', [[
+      'processor_id' => 'sub_abc', 'contact_id' => 100,
+    ]]);
+
+    $mockSubEndpoint = $this->createMock(SubscriptionEndpoint::class);
+    $mockSubEndpoint->method('cancelForId')
+      ->willThrowException(new ApiException('Server error', 500));
+
+    $mockClient = $this->createMock(MollieApiClient::class);
+    $mockClient->subscriptions = $mockSubEndpoint;
+    $proc->stubbedMollieClient = $mockClient;
+
+    $this->expectException(PaymentProcessorException::class);
+    $this->expectExceptionMessageMatches('/Failed to cancel/');
+
+    $message = NULL;
+    $proc->exposedCancelSubscription($message, ['contributionRecurID' => 10]);
+  }
 }

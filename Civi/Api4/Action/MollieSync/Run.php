@@ -72,7 +72,7 @@ class Run extends AbstractAction {
       $stats['checked']++;
 
       try {
-        $mollieCustomerId = self::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
+        $mollieCustomerId = static::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
         if ($mollieCustomerId === NULL) {
           \CRM_Mollie_Log::warning("Sync: no Mollie customer for ContributionRecur #{$recur['id']}", [
             'contribution_recur_id' => $recur['id'],
@@ -80,8 +80,8 @@ class Run extends AbstractAction {
           continue;
         }
 
-        $client = self::getClientForProcessor($recur['payment_processor_id']);
-        $subscription = self::throttledApiCall(
+        $client = static::getClientForProcessor($recur['payment_processor_id']);
+        $subscription = static::throttledApiCall(
           fn() => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id'])
         );
 
@@ -203,13 +203,13 @@ class Run extends AbstractAction {
 
     foreach ($cancelledRecurs as $recur) {
       try {
-        $mollieCustomerId = self::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
+        $mollieCustomerId = static::getMollieCustomerId($recur['contact_id'], $recur['payment_processor_id']);
         if ($mollieCustomerId === NULL) {
           continue;
         }
 
-        $client = self::getClientForProcessor($recur['payment_processor_id']);
-        $subscription = self::throttledApiCall(
+        $client = static::getClientForProcessor($recur['payment_processor_id']);
+        $subscription = static::throttledApiCall(
           fn() => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id'])
         );
 
@@ -217,7 +217,7 @@ class Run extends AbstractAction {
           continue;
         }
 
-        self::throttledApiCall(
+        static::throttledApiCall(
           fn() => $client->subscriptions->cancelForId($mollieCustomerId, $recur['processor_id'])
         );
         $stats['cancellations_retried']++;
