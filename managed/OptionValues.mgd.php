@@ -7,7 +7,7 @@ return [
     'name' => 'activity_type:mollie_reminder_sent',
     'entity' => 'OptionValue',
     'cleanup' => 'always',
-    'update' => 'always',
+    'update' => 'unmodified',
     'params' => [
       'version' => 4,
       'values' => [
@@ -25,7 +25,7 @@ return [
     'name' => 'activity_type:mollie_unmatched_payment',
     'entity' => 'OptionValue',
     'cleanup' => 'always',
-    'update' => 'always',
+    'update' => 'unmodified',
     'params' => [
       'version' => 4,
       'values' => [
