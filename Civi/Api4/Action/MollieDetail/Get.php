@@ -198,7 +198,7 @@ class Get extends AbstractAction {
   protected static function extractLinks(\stdClass $resource): array {
     $links = ['related' => [], 'documentation' => ''];
     $rawLinks = get_object_vars($resource->_links ?? new \stdClass());
-    $skip = ['self', 'dashboard', 'profile', 'previous', 'next', 'settlement'];
+    $skip = ['self', 'dashboard', 'previous', 'next', 'profile', 'settlement', 'settlements', 'balance', 'balances', 'invoice', 'invoices'];
 
     foreach ($rawLinks as $key => $link) {
       if (in_array($key, $skip, TRUE)) {
