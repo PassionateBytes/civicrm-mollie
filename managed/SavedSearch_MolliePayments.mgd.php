@@ -32,6 +32,9 @@ return [
           'orderBy' => [
             'receive_date' => 'DESC',
           ],
+          // CiviCRM APIv4 automatically adds "WHERE is_test = 0" unless
+          // is_test appears in the WHERE clause. The OR tautology bypasses
+          // this so both test and live records are available for filtering.
           'where' => [
             ['trxn_id', 'LIKE', 'tr_%'],
             ['OR', [['is_test', '=', 0], ['is_test', '=', 1]]],

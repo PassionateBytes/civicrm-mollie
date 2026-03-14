@@ -1647,6 +1647,10 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
    *   Mollie-compatible locale string (e.g. 'nl_NL') or null.
    */
   protected function getMollieLocale(int $contactId): ?string {
+    // Mollie-supported locales for checkout page localization.
+    // Source: https://docs.mollie.com/reference/create-payment (locale parameter).
+    // The Mollie SDK does not provide a locale constant list; this is manually
+    // maintained. Update if Mollie adds new locales.
     $mollieLocales = [
       'en_US', 'en_GB', 'nl_NL', 'nl_BE', 'fr_FR', 'fr_BE',
       'de_DE', 'de_AT', 'de_CH', 'es_ES', 'ca_ES', 'pt_PT',
