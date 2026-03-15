@@ -351,6 +351,12 @@ namespace Civi\Api4 {
       return new \Tests\Stubs\MockApi4Action('OptionValue', 'get');
     }
   }
+
+  class PaymentProcessor {
+    public static function get($checkPermissions = true): \Tests\Stubs\MockApi4Action {
+      return new \Tests\Stubs\MockApi4Action('PaymentProcessor', 'get');
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
