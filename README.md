@@ -40,15 +40,6 @@ A CiviCRM extension for processing one-off and recurring contributions through [
 - **Recurring lifecycle management** — cancel subscriptions and change amounts from within CiviCRM
 - **Test mode** — full support for Mollie test API keys
 
-### Supported Frequencies
-
-| Frequency      | Mollie Interval |
-| -------------- | --------------- |
-| Every N days   | `N days`        |
-| Every N weeks  | `N weeks`       |
-| Every N months | `N months`      |
-| Yearly         | `12 months`     |
-
 ## Installation
 
 1. Copy or clone this extension into your CiviCRM extensions directory (e.g., `sites/default/files/civicrm/ext/`). All dependencies are bundled.
