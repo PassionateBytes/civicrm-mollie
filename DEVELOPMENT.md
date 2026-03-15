@@ -236,10 +236,14 @@ See also:
 The project includes a Makefile for common tasks, all running in Docker containers:
 
 ```bash
-make install    # Install development dependencies via Composer
-make test       # Run PHPUnit test suite with --testdox output
-make clean      # Reset vendor/ directory to committed state
-make            # Run all three in sequence (install, test, clean)
+make              # Runs: install-dev, format, lint, test, clean
+
+make install      # Install production dependencies via Composer
+make install-dev  # Install development dependencies via Composer
+make format       # Auto-fix code style with PHP-CS-Fixer
+make lint         # Check code style (dry-run, no changes)
+make test         # Run PHPUnit test suite with --testdox output
+make clean        # Reset vendor/ directory to committed state
 ```
 
 ### Testing
@@ -262,6 +266,7 @@ The test suite uses PHPUnit with standalone stubs (no CiviCRM bootstrap required
 | `MollieProcessingTest` | Contribution completion, chargebacks, refunds, subscriptions, cancellation |
 | `MollieSyncRunTest`    | Status sync, field updates, rate limiting, end-to-end sync flow            |
 | `MollieReminderTest`   | Reminder job: settings, dedup, email, error handling                       |
+| `MollieUtilsTest`      | Utility helpers: processor detection, customer lookup, dashboard URLs      |
 
 **Adding tests**: Follow the existing pattern — create a testable subclass that stubs external dependencies, configure `Api4Mock::setResult()` for CiviCRM API responses, and assert against `Api4Mock::$calls` to verify what was written.
 
