@@ -181,6 +181,10 @@ If a Mollie webhook arrives for a payment that cannot be matched to a CiviCRM co
 
 Enable **Debug Logging** in the extension settings to log detailed Mollie API request/response data. Logs are written to CiviCRM's log system under the `mollie` channel. **Disable this in production** as it produces verbose output.
 
+### CMS Compatibility
+
+This extension has been developed and tested on **CiviCRM Standalone**. It uses only standard CiviCRM APIs and hooks, so there should be no compatibilityu issues on Drupal, WordPress, Joomla, and Backdrop. - But these have not been tested yet. If you're running this extension on a different CMS, please [report any issues](https://github.com/PassionateBytes/civicrm-mollie/issues).
+
 ## Development & Architecture Details
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for architecture details, design decisions, and developer workflow.
