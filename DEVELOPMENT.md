@@ -2,7 +2,42 @@
 
 Developer documentation for the Mollie Payment Processor CiviCRM extension (`com.passionate-bytes.mollie`).
 
-## CiviCRM Developer Resources
+## Table of Contents
+
+- [References](#references)
+  - [CiviCRM Developer Resources](#civicrm-developer-resources)
+  - [Mollie API Quick Reference](#mollie-api-quick-reference)
+- [Architecture](#architecture)
+  - [Core Design Decisions](#core-design-decisions)
+  - [Key Entry Points](#key-entry-points)
+  - [CiviCRM Conventions](#civicrm-conventions)
+- [Payment Flows](#payment-flows)
+  - [One-Off Payment](#one-off-payment)
+  - [Recurring Payment — First Payment](#recurring-payment--first-payment)
+  - [Recurring Payment — Subsequent Installments](#recurring-payment--subsequent-installments)
+  - [Chargebacks and Refunds](#chargebacks-and-refunds)
+  - [Zero-Amount Payments](#zero-amount-payments)
+- [Webhook Handling](#webhook-handling)
+  - [Security](#security)
+  - [Concurrency](#concurrency)
+  - [HTTP Response Codes](#http-response-codes)
+  - [Unmatched Payments](#unmatched-payments)
+- [Email Templates](#email-templates)
+  - [Custom Tokens](#custom-tokens)
+- [Admin Dashboard and Mollie Detail Views](#admin-dashboard-and-mollie-detail-views)
+  - [Dashboard](#dashboard)
+  - [Detail View](#detail-view)
+  - [Security Model](#security-model)
+- [Development Workflow](#development-workflow)
+  - [Prerequisites](#prerequisites)
+  - [Makefile](#makefile)
+  - [Testing](#testing)
+  - [Debugging](#debugging)
+  - [Implementation Notes](#implementation-notes)
+
+## References
+
+### CiviCRM Developer Resources
 
 If you're new to CiviCRM extension development, start here:
 
@@ -12,6 +47,25 @@ If you're new to CiviCRM extension development, start here:
 - [SearchKit & Afform](https://docs.civicrm.org/dev/en/latest/searchkit/) — used for the admin dashboard
 - [Managed Entities](https://docs.civicrm.org/dev/en/latest/extensions/civix/#generate-entity) — auto-managed configuration (v4 format)
 - [Workflow Message Templates](https://docs.civicrm.org/dev/en/latest/framework/message-templates/) — the reminder email template pattern
+
+### Mollie API Quick Reference
+
+| API           | Endpoint                                | Purpose                                     | Docs                                                                       |
+| ------------- | --------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------- |
+| Payments      | `POST /v2/payments`                     | Create one-off and first recurring payments | [Payments API](https://docs.mollie.com/reference/create-payment)           |
+| Customers     | `POST /v2/customers`                    | Required for recurring flow                 | [Customers API](https://docs.mollie.com/reference/create-customer)         |
+| Mandates      | `GET /v2/customers/{id}/mandates`       | Verify after first payment                  | [Mandates API](https://docs.mollie.com/reference/list-mandates)            |
+| Subscriptions | `POST /v2/customers/{id}/subscriptions` | Mollie-managed recurring                    | [Subscriptions API](https://docs.mollie.com/reference/create-subscription) |
+
+See also:
+
+- [Recurring payments guide](https://docs.mollie.com/docs/recurring-payments)
+- [Webhook handling](https://docs.mollie.com/docs/webhooks)
+- [Mollie PHP SDK](https://github.com/mollie/mollie-api-php)
+
+**Recurring flow**: Customer → First payment (`sequenceType: first`) → Mandate auto-created → Subscription → Mollie charges automatically (`sequenceType: recurring`)
+
+**Webhook contract**: Mollie POSTs `id=<payment_id>` — always fetch the full payment object to verify status. Never trust the POST body alone.
 
 ## Architecture
 
@@ -28,7 +82,6 @@ If you're new to CiviCRM extension development, start here:
   - `Contribution.trxn_id` — Mollie payment ID
 - **CiviCRM APIv4** — used throughout, except for `Payment.create` and `Contribution.repeattransaction` which are only available in APIv3 in CiviCRM 6.
 - **Managed entities** — all configuration (payment processor type, saved searches, scheduled jobs, option values, message templates) is declared as managed entities, ensuring consistent state on install/upgrade.
-- **SearchKit + Afform** — admin dashboard built entirely with SearchKit saved searches and Afform, avoiding custom Angular or PHP page controllers.
 - **Rate-limited API calls** — the sync job uses automatic retry with backoff for Mollie 429 responses, respecting the `Retry-After` header.
 
 ### Key Entry Points
@@ -41,6 +94,9 @@ If you're new to CiviCRM extension development, start here:
 | `Civi/Mollie/Token/ContributionRecurTokens.php`    | Custom token provider for `{contribution_recur.*}` tokens                     |
 | `CRM/Mollie/WorkflowMessage/RecurringReminder.php` | Workflow message class for reminder emails                                    |
 | `schema/MollieCustomer.entityType.php`             | MollieCustomer entity schema                                                  |
+| `CRM/Mollie/Page/MollieDetail.php`                 | Detail view page — renders Mollie API data in a modal popup                   |
+| `Civi/Api4/Action/MollieDetail/Get.php`            | Detail view API action — read-only proxy to Mollie API                        |
+| `CRM/Mollie/Utils.php`                             | Utility helpers — processor detection, customer lookup, dashboard URLs        |
 | `managed/*.mgd.php`                                | Managed entities (processor type, saved searches, scheduled jobs, templates)  |
 | `mollie.php`                                       | Hook implementations                                                          |
 
@@ -48,7 +104,7 @@ If you're new to CiviCRM extension development, start here:
 
 - Translation: user-facing strings wrapped in `E::ts()`
 - Logging: `\Civi::log('mollie')` with PSR-3 levels via `CRM_Mollie_Log`
-- Mixins: `entity-types-php@2.0`, `mgd-php@2.0`, `setting-php@1.0`, `menu-xml@1.0`, `scan-classes@1.0`, `smarty@1.0`
+- Mixins: `entity-types-php@2.0`, `mgd-php@2.0`, `setting-php@1.0`, `menu-xml@1.0`, `scan-classes@1.0`, `smarty@1.0.3`
 - Schema management: `CiviMix\Schema\Mollie\AutomaticUpgrader` handles table creation/deletion from `schema/*.entityType.php` files. The custom `CRM_Mollie_Upgrader` class is reserved for `upgrade_NNNN()` migration steps only.
 
 ## Payment Flows
@@ -206,24 +262,43 @@ In addition, all standard CiviCRM tokens are available in the template:
 
 The template also supports Smarty syntax for conditional logic. The default template uses this to format the frequency display (e.g., "Every month" vs "Every 3 month").
 
-## Mollie API Quick Reference
+## Admin Dashboard and Mollie Detail Views
 
-| API           | Endpoint                                | Purpose                                     | Docs                                                                       |
-| ------------- | --------------------------------------- | ------------------------------------------- | -------------------------------------------------------------------------- |
-| Payments      | `POST /v2/payments`                     | Create one-off and first recurring payments | [Payments API](https://docs.mollie.com/reference/create-payment)           |
-| Customers     | `POST /v2/customers`                    | Required for recurring flow                 | [Customers API](https://docs.mollie.com/reference/create-customer)         |
-| Mandates      | `GET /v2/customers/{id}/mandates`       | Verify after first payment                  | [Mandates API](https://docs.mollie.com/reference/list-mandates)            |
-| Subscriptions | `POST /v2/customers/{id}/subscriptions` | Mollie-managed recurring                    | [Subscriptions API](https://docs.mollie.com/reference/create-subscription) |
+The extension provides an admin dashboard and a detail view page (typically rendered in modals) for browsing Mollie API data directly from within CiviCRM.
 
-See also:
+### Dashboard
 
-- [Recurring payments guide](https://docs.mollie.com/docs/recurring-payments)
-- [Webhook handling](https://docs.mollie.com/docs/webhooks)
-- [Mollie PHP SDK](https://github.com/mollie/mollie-api-php)
+Accessible at **Contributions > Mollie Payments** (`civicrm/admin/mollie`), built with SearchKit saved searches and Afform (no custom page controllers).
 
-**Recurring flow**: Customer → First payment (`sequenceType: first`) → Mandate auto-created → Subscription → Mollie charges automatically (`sequenceType: recurring`)
+**Tabs** (Afform: `ang/MolliePaymentDashboard.aff.*`):
 
-**Webhook contract**: Mollie POSTs `id=<payment_id>` — always fetch the full payment object to verify status. Never trust the POST body alone.
+| Tab | SavedSearch | Entity | Key columns |
+| --- | --- | --- | --- |
+| Payments | `Mollie_Payments` | `Contribution` | Mollie ID (`trxn_id`), amount, status, payment method |
+| Subscriptions | `Mollie_Subscriptions` | `ContributionRecur` | Subscription ID (`processor_id`), amount, frequency, next charge |
+| Customers | `Mollie_Customers` | `MollieCustomer` | Mollie customer ID, linked contact |
+
+Each tab includes a toggle to show/hide test records. Mollie IDs in the tables are clickable links that open detail modals.
+
+### Detail View
+
+The `MollieDetail` page (`civicrm/admin/mollie/detail`) is a read-only proxy to the Mollie API. It accepts an `api_path` parameter (e.g. `payments/tr_xxx`), fetches the resource server-side via `performHttpCall('GET', ...)` on the Mollie SDK client, and renders it as a key-value table in a CiviCRM modal popup (`crm-popup`). Each detail view includes:
+
+- All fields from the Mollie resource (flattened from nested JSON)
+- An **"Open in Mollie"** button linking directly to `my.mollie.com/dashboard/...`
+- Related resource links (e.g. from a payment to its customer, refunds, chargebacks)
+- API documentation link for the resource type
+
+Detail modals are accessible from the dashboard tables and from CiviCRM's Contribution and ContributionRecur detail views (via jQuery-injected links in `mollie.php` hooks).
+
+**Note**: `performHttpCall()` is public but not part of the SDK's documented API surface. It is used here because the typed SDK endpoints don't expose raw JSON for generic resource browsing.
+
+### Security Model
+
+- **Permission**: gated by `access CiviContribute` (`xml/Menu/mollie.xml`)
+- **Read-only**: only `GET` requests are issued — no mutations are possible
+- **API key scoping**: Mollie API keys are scoped to payment-profile-level resources (payments, customers, subscriptions, mandates, refunds). Organization-level endpoints (settlements, balances, invoices) require OAuth tokens and are rejected by Mollie (401/403), even if someone crafts an `api_path` targeting them
+- **No key exposure**: the API key is never sent to the browser — the proxy runs server-side
 
 ## Development Workflow
 
@@ -288,4 +363,3 @@ The test suite uses PHPUnit with standalone stubs (no CiviCRM bootstrap required
 - Never log full API keys — only the last 4 characters
 - All Mollie API calls must be wrapped in try/catch for `\Mollie\Api\Exceptions\ApiException`
 - Zero-amount contributions are handled without Mollie interaction
-- The `MollieDetail` admin browser uses `performHttpCall()` on the Mollie SDK client — this is a public but undocumented internal method, used because the typed SDK endpoints don't expose raw JSON for generic resource browsing
