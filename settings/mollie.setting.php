@@ -54,7 +54,7 @@ return [
     'default' => false,
     'html_type' => 'checkbox',
     'title' => E::ts('Enable Debug Logging'),
-    'description' => E::ts('Log verbose Mollie API request/response data for troubleshooting.'),
+    'description' => E::ts('Log additional detail about webhook processing and payment flow decisions for troubleshooting.'),
     'is_domain' => 1,
     'is_contact' => 0,
     'settings_pages' => [

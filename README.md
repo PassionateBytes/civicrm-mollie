@@ -209,7 +209,7 @@ If a Mollie webhook arrives for a payment that cannot be matched to a CiviCRM co
 
 ### Debug logging
 
-Enable **Debug Logging** in the extension settings to log detailed Mollie API request/response data. Logs are written to CiviCRM's log system under the `mollie` channel. **Disable this in production** as it produces verbose output.
+Enable **Debug Logging** in the extension settings to log additional detail about webhook processing and payment flow decisions. Logs are written to CiviCRM's log system under the `mollie` channel. **Disable this in production** as it produces verbose output.
 
 ## Development & Architecture Details
 

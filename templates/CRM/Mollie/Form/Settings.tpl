@@ -39,7 +39,7 @@
     <tr>
       <td class="label">{$form.mollie_debug_logging.label}</td>
       <td>{$form.mollie_debug_logging.html}
-        <p class="description">{ts domain="com.passionate-bytes.mollie"}Log verbose Mollie API request/response data for troubleshooting. Disable in production.{/ts}</p>
+        <p class="description">{ts domain="com.passionate-bytes.mollie"}Log additional detail about webhook processing and payment flow decisions for troubleshooting. Disable in production.{/ts}</p>
       </td>
     </tr>
   </table>
