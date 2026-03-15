@@ -62,7 +62,7 @@ namespace Tests\Unit {
       return self::$customerMap[$contactId] ?? null;
     }
 
-    protected static function getClientForProcessor(int $processorId): MollieApiClient {
+    protected function getClientForProcessor(int $processorId): MollieApiClient {
       return self::$mockClient;
     }
 

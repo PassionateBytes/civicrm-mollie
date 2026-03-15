@@ -20,6 +20,9 @@ use Mollie\Api\Resources\Subscription;
  * - CiviCRM -> Mollie: retries cancellations that failed to reach Mollie
  */
 class Run extends AbstractAction {
+  /** @var array<int, \Mollie\Api\MollieApiClient> */
+  private array $clients = [];
+
   /**
    * @param Result $result
    */
@@ -36,9 +39,9 @@ class Run extends AbstractAction {
       'errors' => 0,
     ];
 
-    $this->syncFromMollie($stats);
-    $this->recoverSuspended($stats);
-    $this->retryCancellations($stats);
+    $this->syncActiveSubscriptions($stats);
+    $this->recoverSuspendedSubscriptions($stats);
+    $this->retryPendingCancellations($stats);
 
     \CRM_Mollie_Log::info('MollieSync completed', $stats);
 
@@ -53,7 +56,7 @@ class Run extends AbstractAction {
    *
    * @param array $stats
    */
-  protected function syncFromMollie(array &$stats): void {
+  protected function syncActiveSubscriptions(array &$stats): void {
     $activeRecurs = ContributionRecur::get(false)
       ->addSelect(
         'id',
@@ -90,7 +93,7 @@ class Run extends AbstractAction {
           continue;
         }
 
-        $client = static::getClientForProcessor($recur['payment_processor_id']);
+        $client = $this->getClientForProcessor($recur['payment_processor_id']);
         $subscription = static::throttledApiCall(
           fn () => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']),
         );
@@ -218,7 +221,7 @@ class Run extends AbstractAction {
    *
    * @param array $stats
    */
-  protected function recoverSuspended(array &$stats): void {
+  protected function recoverSuspendedSubscriptions(array &$stats): void {
     $failedRecurs = ContributionRecur::get(false)
       ->addSelect(
         'id',
@@ -251,7 +254,7 @@ class Run extends AbstractAction {
           continue;
         }
 
-        $client = static::getClientForProcessor($recur['payment_processor_id']);
+        $client = $this->getClientForProcessor($recur['payment_processor_id']);
         $subscription = static::throttledApiCall(
           fn () => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']),
         );
@@ -293,7 +296,7 @@ class Run extends AbstractAction {
    *
    * @param array $stats
    */
-  protected function retryCancellations(array &$stats): void {
+  protected function retryPendingCancellations(array &$stats): void {
     // Only check recently cancelled subscriptions to avoid scanning the full
     // history on every run. 7 days is generous enough to survive a few days of
     // cron downtime while keeping the query bounded as cancellations accumulate.
@@ -318,7 +321,7 @@ class Run extends AbstractAction {
           continue;
         }
 
-        $client = static::getClientForProcessor($recur['payment_processor_id']);
+        $client = $this->getClientForProcessor($recur['payment_processor_id']);
         $subscription = static::throttledApiCall(
           fn () => $client->subscriptions->getForId($mollieCustomerId, $recur['processor_id']),
         );
@@ -382,12 +385,25 @@ class Run extends AbstractAction {
   /**
    * Get an authenticated Mollie API client for a payment processor.
    *
+   * Clients are cached for the lifetime of this action instance to avoid
+   * redundant lookups when processing multiple records for the same processor.
+   *
    * @param int $processorId
    *
    * @return \Mollie\Api\MollieApiClient
    */
-  protected static function getClientForProcessor(int $processorId): \Mollie\Api\MollieApiClient {
-    return \CRM_Mollie_Utils::getClientForProcessor($processorId);
+  protected function getClientForProcessor(int $processorId): \Mollie\Api\MollieApiClient {
+    if (!isset($this->clients[$processorId])) {
+      $processor = \Civi\Payment\System::singleton()->getById($processorId);
+      $processorConfig = $processor->getPaymentProcessor();
+      $apiKey = $processorConfig['user_name'] ?? '';
+
+      $client = new \Mollie\Api\MollieApiClient();
+      $client->setApiKey($apiKey);
+      $this->clients[$processorId] = $client;
+    }
+
+    return $this->clients[$processorId];
   }
 
   /**
