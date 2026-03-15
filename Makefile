@@ -4,7 +4,7 @@ PHP_IMAGE = php:8.4-cli
 COMPOSER_IMAGE = composer:2
 DOCKER_RUN = docker run --rm -v $(CURDIR):/app -w /app
 
-default: install-dev lint test clean
+default: install-dev format lint test clean
 	@printf "\nDone.\n"
 
 install:
