@@ -4,18 +4,28 @@
   <name>Mollie Payment Processor</name>
   <description>Payment processor for Mollie supporting one-off and recurring donations via the Mollie PHP SDK.</description>
   <license>AGPL-3.0</license>
-  <maintainer>
-    <author>Passionate Bytes Solutions</author>
-    <email>paul@passionate-bytes.com</email>
-  </maintainer>
+  <authors>
+    <author>
+      <name>Passionate Bytes Solutions</name>
+      <email>paul@passionate-bytes.com</email>
+      <role>Maintainer</role>
+    </author>
+  </authors>
   <urls>
     <url desc="Main Extension Page">https://www.passionate-bytes.com</url>
+    <url desc="Source">https://github.com/PassionateBytes/civicrm-mollie</url>
     <url desc="Licensing">http://www.gnu.org/licenses/agpl-3.0.html</url>
   </urls>
   <tags>
     <tag>comp:CiviContribute</tag>
     <tag>topic:payment-processor</tag>
   </tags>
+  <comments>Integrates Mollie (https://www.mollie.com) as a payment processor for CiviCRM.
+    Supports one-off and Mollie-managed recurring payments (subscriptions) using the
+    official Mollie PHP SDK. Includes webhook-driven payment status updates, automatic
+    subscription sync, chargeback and refund handling, pre-payment reminder emails, and
+    an admin dashboard with live Mollie API detail views. Designed for European nonprofits
+    using Mollie for donor payment processing.</comments>
   <releaseDate>2026-02-28</releaseDate>
   <version>1.0.0-dev</version>
   <develStage>alpha</develStage>
