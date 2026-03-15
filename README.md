@@ -178,9 +178,14 @@ Detail modals display the complete Mollie resource data (payment, subscription, 
 
 Mollie-specific information is also injected into CiviCRM's standard Contribution and Recurring Contribution detail views, with clickable links to the detail modals and direct links to the Mollie dashboard.
 
+<details>
+<summary>Screenshots</summary>
+
 ![Contribution view with Mollie Payment row and Open in Mollie button](.screenshots/contribution-view.png)
 
 ![Recurring contribution view with Mollie Customer, Subscription rows and Open in Mollie button](.screenshots/contribution-recur-view.png)
+
+</details>
 
 ## Permissions
 
