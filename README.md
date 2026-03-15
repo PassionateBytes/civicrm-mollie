@@ -118,26 +118,28 @@ The extension automatically handles chargebacks and refunds initiated through Mo
 
 No manual action is required — chargebacks and refunds processed through Mollie are reflected in CiviCRM automatically.
 
-### Subscription Sync
+## Scheduled Jobs
 
-A daily scheduled job (`MollieSync`) reconciles Mollie subscription state with CiviCRM as a safety net for missed webhooks (e.g., server downtime). It:
+The extension registers two scheduled jobs that run daily. Both are registered automatically — verify they are enabled under **Administer > System Settings > Scheduled Jobs**.
+
+### Subscription Sync (`MollieSync`)
+
+Reconciles Mollie subscription state with CiviCRM as a safety net for missed webhooks (e.g., server downtime). It:
 
 1. Checks all active/pending recurring contributions with a Mollie subscription and syncs status, next charge date, and amount from Mollie into CiviCRM (Mollie is the source of truth).
 2. Detects completed, cancelled, and suspended subscriptions and updates the recurring contribution accordingly.
 3. Recovers subscriptions that were temporarily suspended by Mollie (e.g., failed mandate) and later reactivated.
 4. Retries cancellations that were made in CiviCRM but failed to reach Mollie (e.g., due to a network error at the time).
 
-### Pre-Payment Reminders
+### Pre-Payment Reminders (`MollieRecurringReminder`)
 
-A daily scheduled job (`MollieRecurringReminder`) sends reminder emails before upcoming recurring charges when enabled in extension settings. It:
+Sends reminder emails before upcoming recurring charges (only active when enabled in extension settings). It:
 
 1. Finds recurring contributions with a next charge date within the configured reminder window (default: 7 days).
 2. Sends a reminder email to each contact using the "Mollie Recurring Reminder" workflow message template.
 3. Records a "Mollie Reminder Sent" activity on the contact to prevent duplicate reminders for the same billing cycle.
 
 The email template can be customized via **Mailings > Message Templates > System Workflow Messages** (look for "Mollie Recurring Reminder"). It uses custom `{contribution_recur.*}` tokens provided by this extension, as well as standard CiviCRM tokens like `{contact.*}` and `{domain.*}`. Customizations to the editable template are preserved across extension upgrades. See the [Email Templates](DEVELOPMENT.md#email-templates) section in the development guide for the full token reference.
-
-Both scheduled jobs are registered automatically and run daily. Verify they are enabled under **Administer > System Settings > Scheduled Jobs**.
 
 ## Admin Dashboard
 
