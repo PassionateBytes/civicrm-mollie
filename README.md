@@ -6,6 +6,21 @@ A CiviCRM extension for processing one-off and recurring contributions through [
 
 > **Beta** — This extension is under active development and has been tested on **CiviCRM Standalone** only. It uses standard CiviCRM APIs and hooks, so it should work on Drupal, WordPress, Joomla, and Backdrop, but these have not been verified yet. Testing, [bug reports](https://github.com/PassionateBytes/civicrm-mollie/issues), and pull requests are very welcome.
 
+## Table of Contents
+
+- [Requirements](#requirements)
+- [Features](#features)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [How It Works](#how-it-works)
+- [Scheduled Jobs](#scheduled-jobs)
+- [Admin Dashboard](#admin-dashboard)
+- [Permissions](#permissions)
+- [Troubleshooting](#troubleshooting)
+- [Development & Architecture Details](#development--architecture-details)
+- [License](#license)
+- [Credits](#credits)
+
 ## Requirements
 
 - CiviCRM >= 6.0
