@@ -27,7 +27,7 @@
     an admin dashboard with live Mollie API detail views. Designed for European nonprofits
     using Mollie for donor payment processing.</comments>
   <releaseDate>2026-02-28</releaseDate>
-  <version>1.0.0-dev</version>
+  <version>0.1.0</version>
   <develStage>alpha</develStage>
   <compatibility>
     <ver>6.0</ver>
