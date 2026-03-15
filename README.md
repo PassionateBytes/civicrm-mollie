@@ -65,6 +65,8 @@ Existing contributions, recurring contributions, and payment tokens are **not de
 
 CiviCRM's built-in test/live mode toggle determines which key is used at runtime.
 
+![Payment processor setup with Mollie API key fields](.screenshots/processor-setup.png)
+
 **Test mode note**: Mollie's test environment supports one-off payments and first recurring payments. However, Mollie does not automatically trigger subsequent subscription charges in test mode — those can only be verified with live payments. See [Mollie's testing guide](https://docs.mollie.com/overview/testing) for details.
 
 ### Extension Settings
@@ -77,6 +79,8 @@ Extension settings are available at **Administer > CiviContribute > Mollie Setti
 | Enable Pre-Payment Reminders | Off                           | Send email reminders before recurring charges        |
 | Reminder Days Before Charge  | 7                             | How many days before the charge to send the reminder |
 | Enable Debug Logging         | Off                           | Verbose Mollie API logging (disable in production)   |
+
+![Extension settings page](.screenshots/settings.png)
 
 ### Contribution Pages
 
@@ -125,7 +129,31 @@ An admin dashboard is available at **Administer > CiviContribute > Mollie Paymen
 - **Subscriptions** — active recurring contributions with Mollie subscription status, next charge date, and mandate type
 - **Customers** — Mollie customer mappings to CiviCRM contacts
 
-Clicking a row opens a detail modal that fetches live data from the Mollie API, showing the full resource (payment, subscription, customer, mandate, refund, etc.) with navigation between related resources.
+Clicking a Mollie ID opens a detail modal that fetches live data from the Mollie API, showing the full resource with navigation between related resources.
+
+![Dashboard — Payments tab showing Mollie-processed contributions](.screenshots/dashboard-payments.png)
+
+![Dashboard — Subscriptions tab showing recurring donation series](.screenshots/dashboard-subscriptions.png)
+
+![Dashboard — Customers tab showing Mollie customer mappings](.screenshots/dashboard-customers.png)
+
+### Detail Modals
+
+Detail modals display the complete Mollie resource data (payment, subscription, customer, mandate, refund, etc.) with an "Open in Mollie" button linking to the Mollie dashboard and links to related resources.
+
+![Payment detail modal with full Mollie API data and related resource links](.screenshots/detail-payment.png)
+
+![Subscription detail modal showing interval, webhook URL, and metadata](.screenshots/detail-subscription.png)
+
+![Customer detail modal with linked metadata and navigation to mandates, subscriptions, and payments](.screenshots/detail-customer.png)
+
+### Mollie Details on CiviCRM Views
+
+Mollie-specific information is also injected into CiviCRM's standard Contribution and Recurring Contribution detail views, with clickable links to the detail modals and direct links to the Mollie dashboard.
+
+![Contribution view with Mollie Payment row and Open in Mollie button](.screenshots/contribution-view.png)
+
+![Recurring contribution view with Mollie Customer, Subscription rows and Open in Mollie button](.screenshots/contribution-recur-view.png)
 
 ## Scheduled Jobs
 
