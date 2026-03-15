@@ -64,11 +64,47 @@ class CRM_Mollie_Utils {
     return $record['mollie_customer_id'] ?? null;
   }
 
+  private const CLIENT_CACHE_TTL = 300;
+
+  /** @var array<int, array{client: \Mollie\Api\MollieApiClient, expires: int}> */
+  private static array $clientCache = [];
+
+  /**
+   * Get an authenticated Mollie API client for a payment processor.
+   *
+   * Results are cached for 5 minutes to avoid repeatedly loading
+   * processor config during batch operations.
+   *
+   * @param int $processorId
+   *
+   * @return \Mollie\Api\MollieApiClient
+   */
+  public static function getClientForProcessor(int $processorId): \Mollie\Api\MollieApiClient {
+    if (isset(self::$clientCache[$processorId])
+        && self::$clientCache[$processorId]['expires'] > time()) {
+      return self::$clientCache[$processorId]['client'];
+    }
+
+    $processor = \Civi\Payment\System::singleton()->getById($processorId);
+    $processorConfig = $processor->getPaymentProcessor();
+    $apiKey = $processorConfig['user_name'] ?? '';
+
+    $client = new \Mollie\Api\MollieApiClient();
+    $client->setApiKey($apiKey);
+    self::$clientCache[$processorId] = [
+      'client' => $client,
+      'expires' => time() + self::CLIENT_CACHE_TTL,
+    ];
+
+    return $client;
+  }
+
   /**
    * Reset internal caches (for testing).
    */
   public static function resetCache(): void {
     self::$mollieProcessorCache = [];
+    self::$clientCache = [];
   }
 
   /**

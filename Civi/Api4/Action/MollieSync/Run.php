@@ -5,8 +5,6 @@ namespace Civi\Api4\Action\MollieSync;
 use Civi\Api4\ContributionRecur;
 use Civi\Api4\Generic\AbstractAction;
 use Civi\Api4\Generic\Result;
-use Civi\Api4\MollieCustomer;
-use Civi\Payment\System;
 use Mollie\Api\Exceptions\ApiException;
 use Mollie\Api\Resources\Subscription;
 
@@ -378,46 +376,18 @@ class Run extends AbstractAction {
    * @return string|null
    */
   protected static function getMollieCustomerId(int $contactId, int $processorId): ?string {
-    $result = MollieCustomer::get(false)
-      ->addSelect('mollie_customer_id')
-      ->addWhere('contact_id', '=', $contactId)
-      ->addWhere('payment_processor_id', '=', $processorId)
-      ->setLimit(1)
-      ->execute();
-
-    return $result->count() > 0 ? $result->first()['mollie_customer_id'] : null;
+    return \CRM_Mollie_Utils::getMollieCustomerId($contactId, $processorId);
   }
 
   /**
-   * Get an authenticated Mollie API client for a payment processor ID.
+   * Get an authenticated Mollie API client for a payment processor.
    *
    * @param int $processorId
    *
    * @return \Mollie\Api\MollieApiClient
    */
-  private const CLIENT_CACHE_TTL = 300;
-
-  /** @var array<int, array{client: \Mollie\Api\MollieApiClient, expires: int}> */
-  protected static array $clientCache = [];
-
   protected static function getClientForProcessor(int $processorId): \Mollie\Api\MollieApiClient {
-    if (isset(self::$clientCache[$processorId])
-        && self::$clientCache[$processorId]['expires'] > time()) {
-      return self::$clientCache[$processorId]['client'];
-    }
-
-    $processor = System::singleton()->getById($processorId);
-    $processorConfig = $processor->getPaymentProcessor();
-    $apiKey = $processorConfig['user_name'] ?? '';
-
-    $client = new \Mollie\Api\MollieApiClient();
-    $client->setApiKey($apiKey);
-    self::$clientCache[$processorId] = [
-      'client' => $client,
-      'expires' => time() + self::CLIENT_CACHE_TTL,
-    ];
-
-    return $client;
+    return \CRM_Mollie_Utils::getClientForProcessor($processorId);
   }
 
   /**
