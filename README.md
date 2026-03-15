@@ -4,6 +4,8 @@ A CiviCRM extension for processing one-off and recurring contributions through [
 
 **Extension key**: `com.passionate-bytes.mollie`
 
+> **Beta** — This extension is under active development and has been tested on **CiviCRM Standalone** only. It uses standard CiviCRM APIs and hooks, so it should work on Drupal, WordPress, Joomla, and Backdrop, but these have not been verified yet. Testing, [bug reports](https://github.com/PassionateBytes/civicrm-mollie/issues), and pull requests are very welcome.
+
 ## Requirements
 
 - CiviCRM >= 6.0
@@ -208,10 +210,6 @@ If a Mollie webhook arrives for a payment that cannot be matched to a CiviCRM co
 ### Debug logging
 
 Enable **Debug Logging** in the extension settings to log detailed Mollie API request/response data. Logs are written to CiviCRM's log system under the `mollie` channel. **Disable this in production** as it produces verbose output.
-
-### CMS Compatibility
-
-This extension has been developed and tested on **CiviCRM Standalone**. It uses only standard CiviCRM APIs and hooks, so there should be no compatibilityu issues on Drupal, WordPress, Joomla, and Backdrop. - But these have not been tested yet. If you're running this extension on a different CMS, please [report any issues](https://github.com/PassionateBytes/civicrm-mollie/issues).
 
 ## Development & Architecture Details
 
