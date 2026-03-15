@@ -117,11 +117,26 @@ The extension automatically handles chargebacks and refunds initiated through Mo
 
 No manual action is required — chargebacks and refunds processed through Mollie are reflected in CiviCRM automatically.
 
+### Subscription Sync
+
+A daily scheduled job (`MollieSync`) reconciles Mollie subscription state with CiviCRM as a safety net for missed webhooks (e.g., server downtime). It:
+
+- Checks all active/pending recurring contributions with a Mollie subscription and syncs status, next charge date, and amount from Mollie into CiviCRM (Mollie is the source of truth)
+- Detects completed, cancelled, and suspended subscriptions and updates the recurring contribution accordingly
+- Recovers subscriptions that were temporarily suspended by Mollie (e.g., failed mandate) and later reactivated
+- Retries cancellations that were made in CiviCRM but failed to reach Mollie (e.g., due to a network error at the time)
+
 ### Pre-Payment Reminders
 
-When enabled, a daily scheduled job checks for upcoming recurring charges and sends reminder emails to contacts within the configured window (default: 7 days before). The email template can be customized via **Mailings > Message Templates > System Workflow Messages** (look for "Mollie Recurring Reminder").
+A daily scheduled job (`MollieRecurringReminder`) sends reminder emails before upcoming recurring charges when enabled in extension settings. It:
 
-The template uses custom `{contribution_recur.*}` tokens provided by this extension, as well as standard CiviCRM tokens like `{contact.*}` and `{domain.*}`. Customizations to the editable template are preserved across extension upgrades. See the [Email Templates](DEVELOPMENT.md#email-templates) section in the development guide for the full token reference.
+- Finds recurring contributions with a next charge date within the configured reminder window (default: 7 days)
+- Sends a reminder email to each contact using the "Mollie Recurring Reminder" workflow message template
+- Records a "Mollie Reminder Sent" activity on the contact to prevent duplicate reminders for the same billing cycle
+
+The email template can be customized via **Mailings > Message Templates > System Workflow Messages** (look for "Mollie Recurring Reminder"). It uses custom `{contribution_recur.*}` tokens provided by this extension, as well as standard CiviCRM tokens like `{contact.*}` and `{domain.*}`. Customizations to the editable template are preserved across extension upgrades. See the [Email Templates](DEVELOPMENT.md#email-templates) section in the development guide for the full token reference.
+
+Both scheduled jobs are registered automatically and run daily. Verify they are enabled under **Administer > System Settings > Scheduled Jobs**.
 
 ## Admin Dashboard
 
@@ -133,21 +148,31 @@ An admin dashboard is available at **Administer > CiviContribute > Mollie Paymen
 
 Clicking a Mollie ID opens a detail modal that fetches live data from the Mollie API, showing the full resource with navigation between related resources.
 
+<details>
+<summary>Screenshots</summary>
+
 ![Dashboard — Payments tab showing Mollie-processed contributions](.screenshots/dashboard-payments.png)
 
 ![Dashboard — Subscriptions tab showing recurring donation series](.screenshots/dashboard-subscriptions.png)
 
 ![Dashboard — Customers tab showing Mollie customer mappings](.screenshots/dashboard-customers.png)
 
+</details>
+
 ### Detail Modals
 
 Detail modals display the complete Mollie resource data (payment, subscription, customer, mandate, refund, etc.) with an "Open in Mollie" button linking to the Mollie dashboard and links to related resources.
+
+<details>
+<summary>Screenshots</summary>
 
 ![Payment detail modal with full Mollie API data and related resource links](.screenshots/detail-payment.png)
 
 ![Subscription detail modal showing interval, webhook URL, and metadata](.screenshots/detail-subscription.png)
 
 ![Customer detail modal with linked metadata and navigation to mandates, subscriptions, and payments](.screenshots/detail-customer.png)
+
+</details>
 
 ### Mollie Details on CiviCRM Views
 
@@ -156,27 +181,6 @@ Mollie-specific information is also injected into CiviCRM's standard Contributio
 ![Contribution view with Mollie Payment row and Open in Mollie button](.screenshots/contribution-view.png)
 
 ![Recurring contribution view with Mollie Customer, Subscription rows and Open in Mollie button](.screenshots/contribution-recur-view.png)
-
-## Scheduled Jobs
-
-The extension registers two scheduled jobs that run daily. Verify they are enabled under **Administer > System Settings > Scheduled Jobs**.
-
-### MollieSync
-
-Fallback sync that fetches subscription and contribution statuses from Mollie to keep CiviCRM up to date when webhooks fail to arrive (e.g., due to server downtime or network issues). Specifically, it:
-
-- Checks all active/pending recurring contributions with a Mollie subscription
-- Syncs status, next charge date, and amount from Mollie into CiviCRM (Mollie is the source of truth)
-- Detects completed, cancelled, and suspended subscriptions and updates the recurring contribution accordingly
-- Retries cancellations that were made in CiviCRM but failed to reach Mollie (e.g., due to a network error at the time)
-
-### MollieRecurringReminder
-
-Sends pre-payment reminder emails before upcoming recurring charges (only active when enabled in extension settings). Specifically, it:
-
-- Finds recurring contributions with a next charge date within the configured reminder window
-- Sends a reminder email to each contact using the "Mollie Recurring Reminder" workflow message template
-- Records a "Mollie Reminder Sent" activity on the contact to prevent duplicate reminders for the same billing cycle
 
 ## Permissions
 
