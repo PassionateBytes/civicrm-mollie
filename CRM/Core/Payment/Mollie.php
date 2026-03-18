@@ -81,6 +81,28 @@ class CRM_Core_Payment_Mollie extends CRM_Core_Payment {
     return true;
   }
 
+  /**
+   * Cancellation must always be sent to Mollie.
+   *
+   * A CiviCRM-only cancellation would leave the Mollie subscription active,
+   * causing charges to continue. This removes the "notify processor?" radio
+   * from the back-office cancel form and forces the request to Mollie.
+   *
+   * @return bool
+   */
+  protected function supportsCancelRecurringNotifyOptional(): bool {
+    return false;
+  }
+
+  /**
+   * Fields editable on the recurring contribution update form.
+   *
+   * @return array
+   */
+  public function getEditableRecurringScheduleFields(): array {
+    return ['amount', 'installments'];
+  }
+
   // ---------------------------------------------------------------------------
   // Recurring lifecycle: cancel & amount change
   // ---------------------------------------------------------------------------
