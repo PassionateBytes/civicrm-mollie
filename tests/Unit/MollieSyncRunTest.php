@@ -648,7 +648,7 @@ namespace Tests\Unit {
         'amount' => '25.00',
         'currency' => 'EUR',
         'end_date' => null,
-        'cancel_date' => '2026-03-10 00:00:00',
+        'cancel_date' => date('Y-m-d H:i:s', strtotime('-3 days')),
       ];
 
       // The Cancelled status is filtered by WHERE clauses in the mock:
